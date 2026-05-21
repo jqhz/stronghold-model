@@ -17,3 +17,8 @@ Chunkborders on - Show the 16x16 bounds for sub chunks as well as to be able to 
 Display the seed, Chunk x, chunk z, height of stronghold, total rooms, counts of prison halls, spiral stair cases, square rooms, 5-ways, straight stairs, libraries, and chest corridors.
 
 Hover over any given room to display the age, and coordinates
+
+[x] MPK calculation
+[x] Right side toggle which of the 3 first ring strongholds
+[ ] Chunk borders on
+[ ] Add hover display for information on each room piece

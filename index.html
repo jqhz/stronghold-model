@@ -10,6 +10,9 @@
     #info { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.55); color: #fff; padding: 10px; border-radius: 6px; max-width: 320px; }
     #info a { color: #9cf; }
     #canvas-container { width: 100vw; height: 100vh; }
+    #stronghold-picker { position: absolute; top: 10px; right: 10px; z-index: 10; background: rgba(0,0,0,0.55); color: #fff; padding: 10px; border-radius: 6px; }
+    #stronghold-picker a { color: #9cf; }
+    #stronghold-picker button { display: block; margin: 8px 0; padding: 6px 12px; background: #333; color: #fff; border: none; border-radius: 12px; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -23,7 +26,7 @@
       <label>Chunk Z <input id="chunkZInput" type="number" step="1" style="width:80px; margin-left:8px;" /></label><br />
       <button id="generateButton" style="margin-top:6px; padding:4px 10px;">Generate</button>
     </div>
-    <em>Open this page via HTTP with <code>stronghold.jar</code> in the same folder.</em><br /><br />
+
     <strong>Legend</strong><br />
     <span style="color:#82b1ff">■</span> Start<br />
     <span style="color:#ff9d00">■</span> PortalRoom<br />
@@ -31,11 +34,17 @@
     <span style="color:#ff77a9">■</span> SpiralStaircase<br />
     <span style="color:#8c8c8c">■</span> Other pieces<br />
   </div>
+  <div id="stronghold-picker">
+    <button id="stronghold1">Stronghold 1</button>
+    <button id="stronghold2">Stronghold 2</button>
+    <button id="stronghold3">Stronghold 3</button>
+  </div>
   <div id="canvas-container"></div>
-
+  <!-- <script type="module" src="get_mpk_stronghold.js"></script> -->
   <script type="module">
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
     import { OrbitControls } from './OrbitControls.module.js';
+    import { get_mpk_stronghold } from './get_mpk_stronghold.js';
 
     const container = document.getElementById('canvas-container');
     const status = document.getElementById('status');
@@ -103,13 +112,20 @@
     const sceneObjects = [];
     const jarName = './stronghold.jar';
     const defaultSeed = '-5853861396804051592';
-    const defaultChunkX = '113';
-    const defaultChunkZ = '57';
+    const defaultChunkX = '-85';
+    const defaultChunkZ = '43';
 
     const seedField = document.getElementById('seedInput');
     const chunkXField = document.getElementById('chunkXInput');
     const chunkZField = document.getElementById('chunkZInput');
     const generateField = document.getElementById('generateButton');
+
+    const stronghold1 = document.getElementById('stronghold1');
+    const stronghold2 = document.getElementById('stronghold2');
+    const stronghold3 = document.getElementById('stronghold3');
+
+    let strongholds = []; // Store stronghold data
+    let activeStrongholdIndex = null; // currently selected stronghold
 
     seedField.value = parseQueryParam('seed', defaultSeed);
     chunkXField.value = parseQueryParam('chunkX', defaultChunkX);
@@ -169,7 +185,7 @@
       }
     }
 
-    async function loadJar() {
+    async function loadJar(jarName) {
       try {
         const jarResult = cheerpjRunJar(jarName);
         if (jarResult || typeof jarResult.then === 'function') {
@@ -181,7 +197,7 @@
     }
 
     async function runStrongholdJar(seed, chunkX, chunkZ) {
-      await loadJar();
+      await loadJar('./stronghold.jar');
       const args = [String(seed), parseInt(chunkX), parseInt(chunkZ)];
 
       async function runMainWithClasspath(classPath) {
@@ -218,9 +234,9 @@
 
         const start = captured.indexOf('{');
         const end = captured.lastIndexOf('}');
-        // if (start < 0 || end < 0 || start > end) {
-        //   throw new Error(`Stronghold JAR did not produce JSON output for classpath ${classPath}.`);
-        // }
+        if (start < 0 || end < 0 || start > end) {
+          throw new Error(`Stronghold JAR did not produce JSON output for classpath ${classPath}.`);
+        }
         return JSON.parse(captured.slice(start, end + 1));
       }
 
@@ -237,6 +253,75 @@
       }
     }
 
+    async function runGetStrongholds(seed) {
+      await loadJar('./app-1.0-SNAPSHOT-all.jar');
+      const args = [String(seed)];
+
+      async function runMainWithClasspath(classPath) {
+        let captured = '';
+        const originalConsole = {
+          log: console.log,
+          info: console.info,
+          warn: console.warn,
+          error: console.error,
+        };
+
+        const capture = (...values) => {
+          captured += values.map(v => String(v)).join(' ') + '\n';
+        };
+
+        console.log = (...values) => { capture(...values); originalConsole.log(...values); };
+        console.info = (...values) => { capture(...values); originalConsole.info(...values); };
+        console.warn = (...values) => { capture(...values); originalConsole.warn(...values); };
+        console.error = (...values) => { capture(...values); originalConsole.error(...values); };
+
+        try {
+          window.CHEERP_ARGV = args;
+          const result = cheerpjRunMain("org.example.app.App", "/app/app-1.0-SNAPSHOT-all.jar", ...args);
+          if (result && typeof result.then === "function") {    
+            await result;
+          }
+        } finally {
+          window.CHEERP_ARGV = undefined;
+          console.log = originalConsole.log;
+          console.info = originalConsole.info;
+          console.warn = originalConsole.warn;
+          console.error = originalConsole.error;
+        }
+
+        console.log('Full captured output:', captured);
+        
+        // Parse plain text format: pairs of numbers (x, z for each stronghold)
+        const lines = captured.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+        const numbers = lines.map(line => parseInt(line)).filter(n => !isNaN(n));
+        
+        if (numbers.length < 6) {
+          console.error(`Expected at least 6 numbers (3 strongholds x 2 coords), got ${numbers.length}. Raw: ${captured}`);
+          throw new Error(`Stronghold JAR did not produce enough coordinate data.`);
+        }
+
+        // Group into pairs of coordinates
+        const strongholds = [];
+        for (let i = 0; i < 3 && i * 2 + 1 < numbers.length; i++) {
+          strongholds.push({
+            x: numbers[i * 2] * 16,
+            z: numbers[i * 2 + 1] * 16,
+            chunkX: numbers[i * 2],
+            chunkZ: numbers[i * 2 + 1]
+          });
+        }
+        
+        console.log('Parsed strongholds:', strongholds);
+        return { strongholds };
+      }
+
+      try {
+        return await runMainWithClasspath('app/app-1.0-SNAPSHOT-all.jar');
+      } catch (primaryError) {
+        console.warn('Primary CheerpJ run failed with classpath /app/', primaryError);
+      }
+    }
+
     async function loadData() {
       try {
         status.textContent = 'Initializing CheerpJ...';
@@ -247,11 +332,63 @@
         const chunkZ = chunkZField.value || defaultChunkZ;
         status.textContent = `Running stronghold.jar (seed=${seed} chunk=${chunkX},${chunkZ})...`;
         const data = await runStrongholdJar(seed, chunkX, chunkZ);
+        const data_sh = await runGetStrongholds(seed);
+        
+        // Store stronghold data and update buttons
+        if (data_sh && data_sh.strongholds) {
+          strongholds = data_sh.strongholds;
+          updateStrongholdButtons();
+          
+          // Calculate and select the best stronghold
+          const bestShResult = get_mpk_stronghold(strongholds);
+          if (bestShResult) {
+            const bestIdx = bestShResult.best_stronghold_idx;
+            const bestSh = strongholds[bestIdx];
+            
+            // Update fields with best stronghold
+            chunkXField.value = bestSh.chunkX;
+            chunkZField.value = bestSh.chunkZ;
+            activeStrongholdIndex = bestIdx;
+            
+            // Highlight the best stronghold button
+            [stronghold1, stronghold2, stronghold3].forEach((btn, idx) => {
+              if (idx === activeStrongholdIndex) {
+                btn.style.background = '#99c1f1';
+                btn.style.color = '#000';
+              } else {
+                btn.style.background = '#333';
+                btn.style.color = '#fff';
+              }
+            });
+            
+            console.log(`Selected Stronghold ${bestIdx + 1} at chunk (${bestSh.chunkX}, ${bestSh.chunkZ}) with distance ${bestShResult.best_distance.toFixed(2)}`);
+          }
+        }
+        
         renderData(data);
       } catch (error) {
         status.textContent = 'Error loading stronghold data';
         console.error(error);
       }
+    }
+
+    function updateStrongholdButtons() {
+      const buttons = [stronghold1, stronghold2, stronghold3];
+      buttons.forEach((button, index) => {
+        if (strongholds[index]) {
+          const sh = strongholds[index];
+          button.textContent = `Stronghold ${index + 1}: (${sh.chunkX}, ${sh.chunkZ}) | (${sh.x}, ${sh.z})`;
+          button.dataset.index = index;
+          // reflect active state visually
+          if (activeStrongholdIndex !== null && activeStrongholdIndex === index) {
+            button.style.background = '#99c1f1';
+            button.style.color = '#000';
+          } else {
+            button.style.background = '#333';
+            button.style.color = '#fff';
+          }
+        }
+      });
     }
 
     window.addEventListener('resize', () => {
@@ -265,7 +402,51 @@
       controls.update();
       renderer.render(scene, camera);
     }
+    stronghold1.addEventListener('click', () => {
+      const idx = 0;
+      if (activeStrongholdIndex === idx) return; // already active — do nothing
+      if (!strongholds[idx]) return;
+      const sh = strongholds[idx];
+      chunkXField.value = sh.chunkX;
+      chunkZField.value = sh.chunkZ;
+      activeStrongholdIndex = idx;
+      [stronghold1, stronghold2, stronghold3].forEach((btn, i) => {
+        btn.style.background = i === activeStrongholdIndex ? '#99c1f1' : '#333';
+        btn.style.color = i === activeStrongholdIndex ? '#000' : '#fff';
+      });
+      loadData();
+    });
 
+    stronghold2.addEventListener('click', () => {
+      const idx = 1;
+      if (activeStrongholdIndex === idx) return;
+      if (!strongholds[idx]) return;
+      const sh = strongholds[idx];
+      chunkXField.value = sh.chunkX;
+      chunkZField.value = sh.chunkZ;
+      activeStrongholdIndex = idx;
+      [stronghold1, stronghold2, stronghold3].forEach((btn, i) => {
+        btn.style.background = i === activeStrongholdIndex ? '#99c1f1' : '#333';
+        btn.style.color = i === activeStrongholdIndex ? '#000' : '#fff';
+      });
+      loadData();
+    });
+
+    stronghold3.addEventListener('click', () => {
+      const idx = 2;
+      if (activeStrongholdIndex === idx) return;
+      if (!strongholds[idx]) return;
+      const sh = strongholds[idx];
+      chunkXField.value = sh.chunkX;
+      chunkZField.value = sh.chunkZ;
+      activeStrongholdIndex = idx;
+      [stronghold1, stronghold2, stronghold3].forEach((btn, i) => {
+        btn.style.background = i === activeStrongholdIndex ? '#99c1f1' : '#333';
+        btn.style.color = i === activeStrongholdIndex ? '#000' : '#fff';
+      });
+      loadData();
+    });
+    
     loadData();
     animate();
   </script>
