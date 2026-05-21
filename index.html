@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stronghold Viewer</title>
+  <script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+    #info { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.55); color: #fff; padding: 10px; border-radius: 6px; max-width: 320px; }
+    #info a { color: #9cf; }
+    #canvas-container { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="info">
+    <strong>Stronghold Viewer</strong><br />
+    Drag to orbit, scroll to zoom, middle-click to pan.<br />
+    <span id="status">Loading stronghold data...</span><br />
+    <div id="controls" style="margin-top:8px; line-height:1.6;">
+      <label>Seed <input id="seedInput" type="text" style="width:220px;" /></label><br />
+      <label>Chunk X <input id="chunkXInput" type="number" step="1" style="width:80px;" /></label>
+      <label>Chunk Z <input id="chunkZInput" type="number" step="1" style="width:80px; margin-left:8px;" /></label><br />
+      <button id="generateButton" style="margin-top:6px; padding:4px 10px;">Generate</button>
+    </div>
+    <em>Open this page via HTTP with <code>stronghold.jar</code> in the same folder.</em><br /><br />
+    <strong>Legend</strong><br />
+    <span style="color:#82b1ff">■</span> Start<br />
+    <span style="color:#ff9d00">■</span> PortalRoom<br />
+    <span style="color:#7cff8b">■</span> Library<br />
+    <span style="color:#ff77a9">■</span> SpiralStaircase<br />
+    <span style="color:#8c8c8c">■</span> Other pieces<br />
+  </div>
+  <div id="canvas-container"></div>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
+    import { OrbitControls } from './OrbitControls.module.js';
+
+    const container = document.getElementById('canvas-container');
+    const status = document.getElementById('status');
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 10000);
+    camera.position.set(0, 200, 400);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+
+    const grid = new THREE.GridHelper(1024, 64, 0x444444, 0x222222);
+    grid.position.y = 0;
+    scene.add(grid);
+
+    const axes = new THREE.AxesHelper(128);
+    scene.add(axes);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambient);
+
+    const directional = new THREE.DirectionalLight(0xffffff, 0.8);
+    directional.position.set(100, 200, 100);
+    scene.add(directional);
+
+    const pieceMaterials = {
+      Start: new THREE.MeshPhongMaterial({ color: 0x82b1ff, opacity: 0.85, transparent: true }),
+      PortalRoom: new THREE.MeshPhongMaterial({ color: 0xff9d00, opacity: 0.85, transparent: true }),
+      Library: new THREE.MeshPhongMaterial({ color: 0x7cff8b, opacity: 0.85, transparent: true }),
+      SpiralStaircase: new THREE.MeshPhongMaterial({ color: 0xff77a9, opacity: 0.85, transparent: true }),
+      default: new THREE.MeshPhongMaterial({ color: 0x8c8c8c, opacity: 0.85, transparent: true })
+    };
+
+    function materialFor(type) {
+      return pieceMaterials[type] || pieceMaterials.default;
+    }
+
+    function addBox(piece) {
+      const width = piece.maxX - piece.minX + 1;
+      const height = piece.maxY - piece.minY + 1;
+      const depth = piece.maxZ - piece.minZ + 1;
+      const geometry = new THREE.BoxGeometry(width, height, depth);
+      const material = materialFor(piece.type).clone();
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(piece.minX + width / 2 - 0.5, piece.minY + height / 2 - 0.5, piece.minZ + depth / 2 - 0.5);
+      mesh.userData = piece;
+      scene.add(mesh);
+      sceneObjects.push(mesh);
+
+      const edges = new THREE.EdgesGeometry(geometry);
+      const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 1 }));
+      line.position.copy(mesh.position);
+      scene.add(line);
+      sceneObjects.push(line);
+    }
+
+    const sceneObjects = [];
+    const jarName = './stronghold.jar';
+    const defaultSeed = '-5853861396804051592';
+    const defaultChunkX = '113';
+    const defaultChunkZ = '57';
+
+    const seedField = document.getElementById('seedInput');
+    const chunkXField = document.getElementById('chunkXInput');
+    const chunkZField = document.getElementById('chunkZInput');
+    const generateField = document.getElementById('generateButton');
+
+    seedField.value = parseQueryParam('seed', defaultSeed);
+    chunkXField.value = parseQueryParam('chunkX', defaultChunkX);
+    chunkZField.value = parseQueryParam('chunkZ', defaultChunkZ);
+
+    generateField.addEventListener('click', loadData);
+
+    function clearScene() {
+      while (sceneObjects.length > 0) {
+        const object = sceneObjects.pop();
+        scene.remove(object);
+        if (object.geometry) {
+          object.geometry.dispose();
+        }
+        if (object.material) {
+          object.material.dispose();
+        }
+      }
+    }
+
+    function parseQueryParam(name, defaultValue = '0') {
+      const value = new URLSearchParams(window.location.search).get(name);
+      return value !== null ? value : defaultValue;
+    }
+
+    function renderData(data) {
+      status.textContent = `seed=${BigInt(data.worldSeed)} chunk=${data.chunkX},${data.chunkZ} start=${data.startX},${data.startZ}`;
+      clearScene();
+      data.pieces.forEach(addBox);
+
+      const bounds = new THREE.Box3();
+      data.pieces.forEach(p => {
+        bounds.expandByPoint(new THREE.Vector3(p.minX, p.minY, p.minZ));
+        bounds.expandByPoint(new THREE.Vector3(p.maxX, p.maxY, p.maxZ));
+      });
+
+      const size = bounds.getSize(new THREE.Vector3());
+      const center = bounds.getCenter(new THREE.Vector3());
+      controls.target.copy(center);
+      camera.position.set(center.x + size.x * 1.2, center.y + size.y * 0.8 + 50, center.z + size.z * 1.2);
+      camera.lookAt(center);
+
+      const boxHelper = new THREE.Box3Helper(bounds, 0xffff00);
+      scene.add(boxHelper);
+      sceneObjects.push(boxHelper);
+    }
+
+    async function initCheerpJ() {
+      if (!window.cheerpjInit) {
+        throw new Error('CheerpJ loader did not initialize.');
+      }
+      if (!window.cheerpjRunMain || !window.cheerpjRunJar) {
+        await cheerpjInit({version: 17});
+      }
+      if (!window.cheerpjRunJar || !window.cheerpjRunMain) {
+        throw new Error('CheerpJ runtime did not expose expected APIs.');
+      }
+    }
+
+    async function loadJar() {
+      try {
+        const jarResult = cheerpjRunJar(jarName);
+        if (jarResult || typeof jarResult.then === 'function') {
+          await jarResult;
+        }
+      } catch (error) {
+        throw new Error(`Failed to load ${jarName}: ${error.message}`);
+      }
+    }
+
+    async function runStrongholdJar(seed, chunkX, chunkZ) {
+      await loadJar();
+      const args = [String(seed), parseInt(chunkX), parseInt(chunkZ)];
+
+      async function runMainWithClasspath(classPath) {
+        let captured = '';
+        const originalConsole = {
+          log: console.log,
+          info: console.info,
+          warn: console.warn,
+          error: console.error,
+        };
+
+        const capture = (...values) => {
+          captured += values.map(v => String(v)).join(' ') + '\n';
+        };
+
+        console.log = (...values) => { capture(...values); originalConsole.log(...values); };
+        console.info = (...values) => { capture(...values); originalConsole.info(...values); };
+        console.warn = (...values) => { capture(...values); originalConsole.warn(...values); };
+        console.error = (...values) => { capture(...values); originalConsole.error(...values); };
+
+        try {
+          window.CHEERP_ARGV = args;
+          const result = cheerpjRunMain("kaptainwutax.stronghold.Main", "/app/stronghold.jar", ...args);
+          if (result && typeof result.then === "function") {    
+            await result;
+          }
+        } finally {
+          window.CHEERP_ARGV = undefined;
+          console.log = originalConsole.log;
+          console.info = originalConsole.info;
+          console.warn = originalConsole.warn;
+          console.error = originalConsole.error;
+        }
+
+        const start = captured.indexOf('{');
+        const end = captured.lastIndexOf('}');
+        // if (start < 0 || end < 0 || start > end) {
+        //   throw new Error(`Stronghold JAR did not produce JSON output for classpath ${classPath}.`);
+        // }
+        return JSON.parse(captured.slice(start, end + 1));
+      }
+
+      try {
+        return await runMainWithClasspath('app/stronghold.jar');
+      } catch (primaryError) {
+        console.warn('Primary CheerpJ run failed with classpath /app/', primaryError);
+        try {
+          return await runMainWithClasspath(jarName);
+        } catch (secondaryError) {
+          console.warn(`Fallback run failed for ${jarName}, retrying with classpath 'stronghold.jar'.`, secondaryError);
+          return await runMainWithClasspath("./app/stronghold.jar");
+        }
+      }
+    }
+
+    async function loadData() {
+      try {
+        status.textContent = 'Initializing CheerpJ...';
+        await initCheerpJ();
+        status.textContent = 'Loading stronghold.jar...';
+        const seed = seedField.value || defaultSeed;
+        const chunkX = chunkXField.value || defaultChunkX;
+        const chunkZ = chunkZField.value || defaultChunkZ;
+        status.textContent = `Running stronghold.jar (seed=${seed} chunk=${chunkX},${chunkZ})...`;
+        const data = await runStrongholdJar(seed, chunkX, chunkZ);
+        renderData(data);
+      } catch (error) {
+        status.textContent = 'Error loading stronghold data';
+        console.error(error);
+      }
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    loadData();
+    animate();
+  </script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+Paste in Minecraft 1.16.1 seed
+
+Using seedfinder libraries, it gets the 3 strongholds from within the first ring. 
+The application will use the MPK-calculation to get the nearest stronghold and ensure that the modeled stronghold is one you get in MPK.
+
+With KaptainWutax stronghold simulator, we can get the start and all the rooms from within the stronghold given the world seed and starting chunk (X/Z).
+
+Getting all of these and then refining it down to the actual dimentions of the room pieces, we can draw the model using ThreeJS.
+
+## Settings
+
+Display the three first ring strongholds to be able to quickly get the visualizers for them aswell for like ranked seeds.
+MPK off - Enable manual chunk coordinates
+
+Chunkborders on - Show the 16x16 bounds for sub chunks as well as to be able to see bluelines
+
+Display the seed, Chunk x, chunk z, height of stronghold, total rooms, counts of prison halls, spiral stair cases, square rooms, 5-ways, straight stairs, libraries, and chest corridors.
+
+Hover over any given room to display the age, and coordinates
