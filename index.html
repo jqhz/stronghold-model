@@ -61,6 +61,7 @@
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
     import { OrbitControls } from './OrbitControls.module.js';
     import { get_mpk_stronghold } from './get_mpk_stronghold.js';
+    import { buildGraph, shortestPath } from './pathfinder.js';
 
     const container = document.getElementById('canvas-container');
     const status = document.getElementById('status');
@@ -150,6 +151,22 @@
     const loadedJars = new Set();
     const chunkBorderGroup = new THREE.Group();
     let pathLine = null;
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let hoveredObject = null;
+
+    // tooltip
+    const tooltip = document.createElement('div');
+    tooltip.style.position = 'absolute';
+    tooltip.style.pointerEvents = 'none';
+    tooltip.style.background = 'rgba(0,0,0,0.8)';
+    tooltip.style.color = '#fff';
+    tooltip.style.padding = '6px 8px';
+    tooltip.style.borderRadius = '6px';
+    tooltip.style.fontSize = '12px';
+    tooltip.style.display = 'none';
+    tooltip.style.zIndex = 40;
+    document.body.appendChild(tooltip);
 
     seedField.value = parseQueryParam('seed', defaultSeed);
     chunkXField.value = parseQueryParam('chunkX', defaultChunkX);
@@ -275,6 +292,7 @@
       const maxZ = Math.ceil(bounds.max.z / 16) * 16;
       const positions = [];
 
+      // Horizontal grid lines at y=0
       for (let x = minX; x <= maxX; x += 16) {
         positions.push(x, 0, minZ, x, 0, maxZ);
       }
@@ -287,6 +305,21 @@
       const material = new THREE.LineBasicMaterial({ color: 0x999999, opacity: 0.65, transparent: true });
       const lineSegments = new THREE.LineSegments(geometry, material);
       chunkBorderGroup.add(lineSegments);
+
+      // Vertical pillars: for each grid intersection create a vertical line spanning bounds
+      const vertPositions = [];
+      const minY = Math.floor((bounds.min.y - 16) / 16) * 16;
+      const maxY = Math.ceil((bounds.max.y + 16) / 16) * 16;
+      for (let x = minX; x <= maxX; x += 16) {
+        for (let z = minZ; z <= maxZ; z += 16) {
+          vertPositions.push(x, minY, z, x, maxY, z);
+        }
+      }
+      const vgeo = new THREE.BufferGeometry();
+      vgeo.setAttribute('position', new THREE.Float32BufferAttribute(vertPositions, 3));
+      const vlines = new THREE.LineSegments(vgeo, material.clone());
+      chunkBorderGroup.add(vlines);
+
       chunkBorderGroup.position.y = 0;
       if (!scene.children.includes(chunkBorderGroup)) {
         scene.add(chunkBorderGroup);
@@ -318,21 +351,75 @@
         pathLine = null;
       }
 
-      const startPiece = pieces.find(piece => piece.type === 'Start');
-      const portalPiece = pieces.find(piece => piece.type === 'PortalRoom');
-      if (!startPiece || !portalPiece) {
-        return;
-      }
+      const graph = buildGraph(pieces);
+      if (graph.startIndex === -1 || graph.portalIndex === -1) return;
+      const pathIdx = shortestPath(graph.adj, graph.startIndex, graph.portalIndex);
+      if (!pathIdx || pathIdx.length === 0) return;
 
-      const startCenter = getPieceCenter(startPiece);
-      const portalCenter = getPieceCenter(portalPiece);
-      const pathGeometry = new THREE.BufferGeometry().setFromPoints([startCenter, portalCenter]);
-      const pathMaterial = new THREE.LineDashedMaterial({ color: 0xffff00, dashSize: 8, gapSize: 6, linewidth: 2 });
+      const points = pathIdx.map(i => getPieceCenter(pieces[i]));
+      const pathGeometry = new THREE.BufferGeometry().setFromPoints(points);
+      const pathMaterial = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 8 });
       pathLine = new THREE.Line(pathGeometry, pathMaterial);
-      pathLine.computeLineDistances();
       scene.add(pathLine);
       sceneObjects.push(pathLine);
+
+      // store distances for tooltip depth
+      window._pieceDepths = {};
+      pathIdx.forEach((idx, i) => { window._pieceDepths[idx] = i; });
     }
+
+    // mouse interactions
+    function onPointerMove(event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(sceneObjects.filter(o => o.isMesh));
+      if (intersects.length > 0) {
+        const obj = intersects[0].object;
+        if (hoveredObject !== obj) {
+          if (hoveredObject) {
+            hoveredObject.material.emissive && hoveredObject.material.emissive.setHex(0x000000);
+            hoveredObject.material.opacity = hoveredObject.userData._origOpacity || hoveredObject.material.opacity;
+          }
+          hoveredObject = obj;
+          hoveredObject.userData._origOpacity = hoveredObject.material.opacity;
+          hoveredObject.material.emissive && hoveredObject.material.emissive.setHex(0x444444);
+          hoveredObject.material.opacity = Math.min(1, hoveredObject.material.opacity + 0.15);
+        }
+      } else {
+        if (hoveredObject) {
+          hoveredObject.material.emissive && hoveredObject.material.emissive.setHex(0x000000);
+          hoveredObject.material.opacity = hoveredObject.userData._origOpacity || hoveredObject.material.opacity;
+          hoveredObject = null;
+        }
+      }
+    }
+
+    function onPointerDown(event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera({ x, y }, camera);
+      const intersects = raycaster.intersectObjects(sceneObjects.filter(o => o.isMesh));
+      if (intersects.length > 0) {
+        const obj = intersects[0].object;
+        const piece = obj.userData;
+        if (!piece) return;
+        const pieces = sceneObjects.map(o=>o.userData).filter(Boolean);
+        const index = pieces.indexOf(piece);
+        const age = (typeof piece.age !== 'undefined') ? piece.age : (index + 1);
+        const depth = window._pieceDepths && window._pieceDepths[index] != null ? window._pieceDepths[index] : 'N/A';
+        tooltip.style.left = `${event.clientX + 12}px`;
+        tooltip.style.top = `${event.clientY + 12}px`;
+        tooltip.innerHTML = `<strong>${piece.type}</strong><br/>Age: ${age}<br/>Depth: ${depth}`;
+        tooltip.style.display = 'block';
+        setTimeout(()=>{ tooltip.style.display = 'none'; }, 6000);
+      }
+    }
+
+    renderer.domElement.addEventListener('pointermove', onPointerMove);
+    renderer.domElement.addEventListener('pointerdown', onPointerDown);
 
     window.cheerpjInitialized = window.cheerpjInitialized || false;
     async function initCheerpJ() { // 1

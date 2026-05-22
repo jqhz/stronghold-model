@@ -20,15 +20,15 @@ Hover over any given room to display the age, and coordinates
 
 [x] MPK calculation
 [x] Right side toggle which of the 3 first ring strongholds
-[ ] Chunk borders on
-[ ] Add hover display for information on each room piece (room age, piece type)
+[x] Chunk borders on
+[x] Add hover display for information on each room piece (room age, piece type)
 [x] One time CheerpJ init
 [x] One time run mpk and jar to get the 3 stronghold pieces if seeds are same
 [x] Multiple query for the stronghold.jar to get the json model of the stronghold
-[ ] Loading status bar/circle on init and rerender
+[x] Loading status bar/circle on init and rerender
 [ ] MPK only mode (only show the mpk stronghold and hides the other 2)
-[ ] Show path to pr 
-[ ] Show counts for each piece
+[x] Show path to pr 
+[x] Show counts for each piece
 [ ] Show other spawners in the near vacinity
 [x] Async the init and model calls to run asynchronously
 
