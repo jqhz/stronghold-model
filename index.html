@@ -38,6 +38,7 @@
     <span style="color:#ff9d00">■</span> PortalRoom <span id="legendPortalCount">(0/1)</span><br />
     <span style="color:#7cff8b">■</span> Library <span id="legendLibraryCount">(0/2)</span><br />
     <span style="color:#ff77a9">■</span> SpiralStaircase <span id="legendSpiralCount">(0)</span><br />
+    <span style="color:#972851">■</span> StraightStaircase <span id="legendStraightCount">(0)</span><br />
     <span style="color:#8c8c8c">■</span> Other pieces <span id="legendOtherCount">(0)</span><br />
     <small style="display:block; margin-top:8px; color:#ccc; line-height:1.4; max-width:260px;">
       Chunk borders align to Minecraft world coordinates and start at x/z multiples of 16.
@@ -98,6 +99,7 @@
       PortalRoom: new THREE.MeshPhongMaterial({ color: 0xff9d00, opacity: 0.85, transparent: true }),
       Library: new THREE.MeshPhongMaterial({ color: 0x7cff8b, opacity: 0.85, transparent: true }),
       SpiralStaircase: new THREE.MeshPhongMaterial({ color: 0xff77a9, opacity: 0.85, transparent: true }),
+      Stairs: new THREE.MeshPhongMaterial({ color: 0x972851, opacity: 0.85, transparent: true }),
       default: new THREE.MeshPhongMaterial({ color: 0x8c8c8c, opacity: 0.85, transparent: true })
     };
 
@@ -144,7 +146,7 @@
 
     let strongholds = []; // Store stronghold data
     let activeStrongholdIndex = null; // currently selected stronghold
-    const roomLimits = { Start: 1, PortalRoom: 1, Library: 2 };
+    const roomLimits = { Start: 1, PortalRoom: 1, Library: 2, Stairs: 5 };
     const loadedJars = new Set();
     const chunkBorderGroup = new THREE.Group();
     let pathLine = null;
@@ -233,12 +235,13 @@
         acc[piece.type] = (acc[piece.type] || 0) + 1;
         return acc;
       }, {});
-      const otherCount = pieces.length - (counts.Start || 0) - (counts.PortalRoom || 0) - (counts.Library || 0) - (counts.SpiralStaircase || 0);
+      const otherCount = pieces.length - (counts.Start || 0) - (counts.PortalRoom || 0) - (counts.Library || 0) - (counts.SpiralStaircase || 0) - (counts.Stairs || 0);
 
       document.getElementById('legendStartCount').textContent = `(${counts.Start || 0}/${roomLimits.Start})`;
       document.getElementById('legendPortalCount').textContent = `(${counts.PortalRoom || 0}/${roomLimits.PortalRoom})`;
       document.getElementById('legendLibraryCount').textContent = `(${counts.Library || 0}/${roomLimits.Library})`;
-      document.getElementById('legendSpiralCount').textContent = `(${counts.SpiralStaircase || 0})`;
+      document.getElementById('legendStraightCount').textContent = `(${counts.Stairs || 0}/${roomLimits.Stairs})`;
+      document.getElementById('legendSpiralCount').textContent = `(${counts.SpiralStaircase || 0}/${roomLimits.Stairs})`;
       document.getElementById('legendOtherCount').textContent = `(${otherCount})`;
     }
 
