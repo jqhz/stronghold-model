@@ -17,6 +17,9 @@
     .loading-overlay.hidden { display: none; }
     .loading-content { text-align: center; color: #fff; font-size: 1rem; }
     .loading-spinner { width: 52px; height: 52px; border: 6px solid rgba(255,255,255,0.18); border-top-color: #82b1ff; border-radius: 50%; animation: spin 0.85s linear infinite; margin: 0 auto 12px; }
+    .loading-bar-container { width: 240px; height: 14px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18); border-radius: 8px; overflow: hidden; margin: 12px auto 0; }
+    .loading-bar-fill { height: 100%; background: linear-gradient(90deg, #82b1ff 0%, #ffff00 100%); width: 0%; transition: width 0.2s ease; }
+    .loading-percentage { margin-top: 8px; font-size: 0.85rem; color: #ccc; }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
@@ -32,6 +35,7 @@
       <button id="generateButton" style="margin-top:6px; padding:4px 10px;">Generate</button>
     </div>
     <input type="checkbox" id="toggleChunkborders" checked /> <label for="toggleChunkborders">Show Chunkborder Lines</label><br />
+    <input type="checkbox" id="togglePathline" checked /> <label for="togglePathline">Show Path to Portal</label><br />
     <input type="checkbox" id="forceMPK" checked /> <label for="forceMPK">Force MPK Stronghold</label><br />
     <strong>Legend</strong><br />
     <span style="color:#82b1ff">■</span> Start <span id="legendStartCount">(0/1)</span><br />
@@ -52,8 +56,11 @@
   <div id="canvas-container"></div>
   <div id="loadingOverlay" class="loading-overlay hidden">
     <div class="loading-content">
-      <div class="loading-spinner"></div>
       <div id="loadingText">Rendering stronghold model...</div>
+      <div class="loading-bar-container">
+        <div id="loadingBarFill" class="loading-bar-fill"></div>
+      </div>
+      <div id="loadingPercentage" class="loading-percentage">0%</div>
     </div>
   </div>
   <!-- <script type="module" src="get_mpk_stronghold.js"></script> -->
@@ -138,8 +145,11 @@
     const chunkZField = document.getElementById('chunkZInput');
     const generateField = document.getElementById('generateButton');
     const toggleChunkborders = document.getElementById('toggleChunkborders');
+    const togglePathline = document.getElementById('togglePathline');
     const forceMPK = document.getElementById('forceMPK');
     const loadingOverlay = document.getElementById('loadingOverlay');
+    const loadingBarFill = document.getElementById('loadingBarFill');
+    const loadingPercentage = document.getElementById('loadingPercentage');
 
     const stronghold1 = document.getElementById('stronghold1');
     const stronghold2 = document.getElementById('stronghold2');
@@ -150,7 +160,11 @@
     const roomLimits = { Start: 1, PortalRoom: 1, Library: 2, Stairs: 5 };
     const loadedJars = new Set();
     const chunkBorderGroup = new THREE.Group();
-    let pathLine = null;
+    let pathMesh = null;
+    let currentPieceBounds = null;
+    let currentPieceData = [];
+    let pieceDepths = [];
+    let pieceAges = [];
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     let hoveredObject = null;
@@ -174,16 +188,17 @@
 
     generateField.addEventListener('click', loadData);
     toggleChunkborders.addEventListener('change', () => {
-      const pieces = sceneObjects.length ? sceneObjects.map(obj => obj.userData).filter(Boolean) : [];
-      if (pieces.length) {
-        const bounds = new THREE.Box3();
-        pieces.forEach(piece => {
-          bounds.expandByPoint(new THREE.Vector3(piece.minX, piece.minY, piece.minZ));
-          bounds.expandByPoint(new THREE.Vector3(piece.maxX, piece.maxY, piece.maxZ));
-        });
-        updateChunkBorders(bounds);
+      if (currentPieceBounds) {
+        updateChunkBorders(currentPieceBounds);
       }
     });
+    togglePathline.addEventListener('change', () => {
+      if (currentPieceData.length) {
+        drawPath(currentPieceData);
+      }
+    });
+    forceMPK.addEventListener('change', updateForceMPKUI);
+    updateForceMPKUI();
 
     function clearScene() {
       while (sceneObjects.length > 0) {
@@ -224,14 +239,44 @@
       scene.add(boxHelper);
       sceneObjects.push(boxHelper);
 
+      currentPieceBounds = bounds;
+      currentPieceData = data.pieces;
+      computePieceDepths(data.pieces);
       updateLegendCounts(data.pieces);
       drawPath(data.pieces);
       updateChunkBorders(bounds);
     }
 
-    function setLoading(isLoading, message = 'Rendering stronghold model...') {
+    function computePieceDepths(pieces) {
+      pieceAges = pieces.map((_, i) => i + 1);
+      pieceDepths = new Array(pieces.length).fill(null);
+      const graph = buildGraph(pieces);
+      if (graph.startIndex === -1) {
+        return;
+      }
+
+      const visited = new Array(pieces.length).fill(false);
+      const queue = [graph.startIndex];
+      visited[graph.startIndex] = true;
+      pieceDepths[graph.startIndex] = 0;
+
+      while (queue.length) {
+        const current = queue.shift();
+        for (const neighbor of graph.adj.get(current) || []) {
+          if (!visited[neighbor]) {
+            visited[neighbor] = true;
+            pieceDepths[neighbor] = pieceDepths[current] + 1;
+            queue.push(neighbor);
+          }
+        }
+      }
+    }
+
+    function setLoading(isLoading, message = 'Rendering stronghold model...', percent = 0) {
       loadingOverlay.classList.toggle('hidden', !isLoading);
       document.getElementById('loadingText').textContent = message;
+      loadingBarFill.style.width = `${percent}%`;
+      loadingPercentage.textContent = `${percent}%`;
       disableControls(isLoading);
     }
 
@@ -345,10 +390,16 @@
     }
 
     function drawPath(pieces) {
-      if (pathLine) {
-        scene.remove(pathLine);
-        disposeObject(pathLine);
-        pathLine = null;
+      if (pathMesh) {
+        scene.remove(pathMesh);
+        disposeObject(pathMesh);
+        const index = sceneObjects.indexOf(pathMesh);
+        if (index !== -1) sceneObjects.splice(index, 1);
+        pathMesh = null;
+      }
+
+      if (!togglePathline.checked) {
+        return;
       }
 
       const graph = buildGraph(pieces);
@@ -358,10 +409,11 @@
 
       const points = pathIdx.map(i => getPieceCenter(pieces[i]));
       const pathGeometry = new THREE.BufferGeometry().setFromPoints(points);
-      const pathMaterial = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 8 });
-      pathLine = new THREE.Line(pathGeometry, pathMaterial);
-      scene.add(pathLine);
-      sceneObjects.push(pathLine);
+      const pathMaterial = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 8, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false });
+      pathMesh = new THREE.Line(pathGeometry, pathMaterial);
+      pathMesh.renderOrder = 999;
+      scene.add(pathMesh);
+      sceneObjects.push(pathMesh);
 
       // store distances for tooltip depth
       window._pieceDepths = {};
@@ -406,15 +458,15 @@
         const obj = intersects[0].object;
         const piece = obj.userData;
         if (!piece) return;
-        const pieces = sceneObjects.map(o=>o.userData).filter(Boolean);
+        const pieces = sceneObjects.map(o => o.userData).filter(Boolean);
         const index = pieces.indexOf(piece);
-        const age = (typeof piece.age !== 'undefined') ? piece.age : (index + 1);
-        const depth = window._pieceDepths && window._pieceDepths[index] != null ? window._pieceDepths[index] : 'N/A';
+        const age = (typeof piece.age !== 'undefined') ? piece.age : (pieceAges[index] != null ? pieceAges[index] : index + 1);
+        const depth = (pieceDepths[index] != null) ? pieceDepths[index] : 'N/A';
         tooltip.style.left = `${event.clientX + 12}px`;
         tooltip.style.top = `${event.clientY + 12}px`;
         tooltip.innerHTML = `<strong>${piece.type}</strong><br/>Age: ${age}<br/>Depth: ${depth}`;
         tooltip.style.display = 'block';
-        setTimeout(()=>{ tooltip.style.display = 'none'; }, 6000);
+        setTimeout(() => { tooltip.style.display = 'none'; }, 6000);
       }
     }
 
@@ -572,7 +624,7 @@
     }
 
     async function loadData() {
-      setLoading(true, 'Loading stronghold data...');
+      setLoading(true, 'Loading stronghold data...', 10);
       try {
         const seed = seedField.value || defaultSeed;
         const chunkX = chunkXField.value || defaultChunkX;
@@ -583,29 +635,21 @@
         if (prevSeed !== seed) {
           console.log("Previous seed:", prevSeed, "New seed:", seed);
           const data_sh = await runGetStrongholds(seed);
+          setLoading(true, 'Loading stronghold candidates...', 40);
 
-          // const strongholdJarPromise = runStrongholdJar(seed, chunkX, chunkZ);
-          // const getStrongholdsPromise = runGetStrongholds(seed);
-
-          // const [data, data_sh] = await Promise.all([strongholdJarPromise, getStrongholdsPromise]);
-          
-          // Store stronghold data and update buttons
           if (data_sh && data_sh.strongholds) {
             strongholds = data_sh.strongholds;
             updateStrongholdButtons();
             
-            // Calculate and select the best stronghold
             const bestShResult = get_mpk_stronghold(strongholds);
             if (bestShResult) {
               const bestIdx = bestShResult.best_stronghold_idx;
               const bestSh = strongholds[bestIdx];
               
-              // Update fields with best stronghold
               chunkXField.value = bestSh.chunkX;
               chunkZField.value = bestSh.chunkZ;
               activeStrongholdIndex = bestIdx;
               
-              // Highlight the best stronghold button
               [stronghold1, stronghold2, stronghold3].forEach((btn, idx) => {
                 if (idx === activeStrongholdIndex) {
                   btn.style.background = '#99c1f1';
@@ -615,20 +659,21 @@
                   btn.style.color = '#fff';
                 }
               });
-              
-              // console.log(`Selected Stronghold ${bestIdx + 1} at chunk (${bestSh.chunkX}, ${bestSh.chunkZ}) with distance ${bestShResult.best_distance.toFixed(2)}`);
             }
           }
         }
 
+        setLoading(true, 'Running stronghold generator...', 70);
         const data = await runStrongholdJar(seed, chunkX, chunkZ);
 
+        setLoading(true, 'Rendering stronghold model...', 90);
         renderData(data);
+        setLoading(true, 'Done loading stronghold data', 100);
       } catch (error) {
         status.textContent = 'Error loading stronghold data';
         console.error(error);
       } finally {
-        setLoading(false);
+        setLoading(false, 'Rendering stronghold model...', 100);
       }
     }
 
@@ -647,8 +692,31 @@
             button.style.background = '#333';
             button.style.color = '#fff';
           }
+          button.style.display = 'block';
+        } else {
+          button.style.display = 'none';
         }
       });
+      updateForceMPKUI();
+    }
+
+    function updateForceMPKUI() {
+      const buttons = [stronghold1, stronghold2, stronghold3];
+      const isForced = forceMPK.checked;
+      if (isForced && activeStrongholdIndex !== null) {
+
+        buttons.forEach((button, index) => {
+          button.style.display = index === activeStrongholdIndex ? 'block' : 'none';
+        });
+      } else {
+        buttons.forEach(button => {
+          if (button.dataset.index !== undefined) {
+            button.style.display = 'block';
+          }
+        });
+      }
+      chunkXField.readOnly = isForced;
+      chunkZField.readOnly = isForced;
     }
 
     window.addEventListener('resize', () => {
@@ -674,6 +742,7 @@
         btn.style.background = i === activeStrongholdIndex ? '#99c1f1' : '#333';
         btn.style.color = i === activeStrongholdIndex ? '#000' : '#fff';
       });
+      updateForceMPKUI();
       loadData();
     });
 
@@ -689,6 +758,7 @@
         btn.style.background = i === activeStrongholdIndex ? '#99c1f1' : '#333';
         btn.style.color = i === activeStrongholdIndex ? '#000' : '#fff';
       });
+      updateForceMPKUI();
       loadData();
     });
 
@@ -704,6 +774,7 @@
         btn.style.background = i === activeStrongholdIndex ? '#99c1f1' : '#333';
         btn.style.color = i === activeStrongholdIndex ? '#000' : '#fff';
       });
+      updateForceMPKUI();
       loadData();
     });
     await initCheerpJ();
