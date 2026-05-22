@@ -110,7 +110,7 @@
     }
 
     const sceneObjects = [];
-    const jarName = './stronghold.jar';
+    // const jarName = './stronghold.jar';
     const defaultSeed = '-5853861396804051592';
     const defaultChunkX = '-85';
     const defaultChunkZ = '43';
@@ -199,7 +199,7 @@
     }
 
     async function runStrongholdJar(seed, chunkX, chunkZ) { // 4
-      await loadJar('./stronghold.jar');
+      await loadJar('/app/stronghold.jar');
       const args = [String(seed), parseInt(chunkX), parseInt(chunkZ)];
 
       async function runMainWithClasspath(classPath) {
@@ -243,6 +243,10 @@
       }
 
       try {
+        const response = await fetch("./stronghold.jar");
+        if (!response.ok) {
+            throw new Error("Jar failed to load");
+        }
         return await runMainWithClasspath('app/stronghold.jar');
       } catch (primaryError) {
         console.warn('Primary CheerpJ run failed with classpath /app/', primaryError);
@@ -250,7 +254,7 @@
     }
 
     async function runGetStrongholds(seed) { // 2
-      await loadJar('./app-1.0-SNAPSHOT-all.jar');
+      await loadJar('/app/app-1.0-SNAPSHOT-all.jar');
       const args = [String(seed)];
 
       async function runMainWithClasspath(classPath) {
@@ -312,6 +316,11 @@
       }
 
       try {
+        const response = await fetch("./app-1.0-SNAPSHOT-all.jar");
+
+        if (!response.ok) {
+            throw new Error("Jar failed to load");
+        }
         return await runMainWithClasspath('app/app-1.0-SNAPSHOT-all.jar');
       } catch (primaryError) {
         console.warn('Primary CheerpJ run failed with classpath /app/', primaryError);
