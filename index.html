@@ -26,7 +26,8 @@
       <label>Chunk Z <input id="chunkZInput" type="number" step="1" style="width:80px; margin-left:8px;" /></label><br />
       <button id="generateButton" style="margin-top:6px; padding:4px 10px;">Generate</button>
     </div>
-
+    <input type="checkbox" id="toggleChunkborders" checked /> <label for="toggleChunkborders">Show Chunkborder Lines</label><br />
+    <input type="checkbox" id="forceMPK" checked /> <label for="forceMPK">Force MPK Stronghold</label><br />
     <strong>Legend</strong><br />
     <span style="color:#82b1ff">■</span> Start<br />
     <span style="color:#ff9d00">■</span> PortalRoom<br />
@@ -152,7 +153,7 @@
     }
 
     function renderData(data) {
-      status.textContent = `seed=${BigInt(data.worldSeed)} chunk=${data.chunkX},${data.chunkZ} start=${data.startX},${data.startZ}`;
+      status.textContent = `seed=${String(data.worldSeed)} chunk=${data.chunkX},${data.chunkZ} start=${data.startX},${data.startZ}`;
       clearScene();
       data.pieces.forEach(addBox);
 
@@ -239,7 +240,15 @@
         if (start < 0 || end < 0 || start > end) {
           throw new Error(`Stronghold JAR did not produce JSON output for classpath ${classPath}.`);
         }
-        return JSON.parse(captured.slice(start, end + 1));
+
+        const rawJson = captured.slice(start, end + 1);
+        const fixedJson = rawJson.replace(/("worldSeed"\s*:\s*)(-?\d+)/, '$1"$2"');
+        return JSON.parse(fixedJson, (key, value) => {
+          if (key === 'worldSeed') {
+            return String(value);
+          }
+          return value;
+        });
       }
 
       try {
@@ -247,7 +256,7 @@
         if (!response.ok) {
             throw new Error("Jar failed to load");
         }
-        return await runMainWithClasspath('app/stronghold.jar');
+        return await runMainWithClasspath('/app/stronghold.jar');
       } catch (primaryError) {
         console.warn('Primary CheerpJ run failed with classpath /app/', primaryError);
       }
@@ -289,7 +298,7 @@
           console.error = originalConsole.error;
         }
 
-        console.log('Full captured output:', captured);
+        // console.log('Full captured output:', captured);
         
         // Parse plain text format: pairs of numbers (x, z for each stronghold)
         const lines = captured.split('\n').map(line => line.trim()).filter(line => line.length > 0);
@@ -311,7 +320,7 @@
           });
         }
         
-        console.log('Parsed strongholds:', strongholds);
+        // console.log('Parsed strongholds:', strongholds);
         return { strongholds };
       }
 
@@ -321,7 +330,7 @@
         if (!response.ok) {
             throw new Error("Jar failed to load");
         }
-        return await runMainWithClasspath('app/app-1.0-SNAPSHOT-all.jar');
+        return await runMainWithClasspath('/app/app-1.0-SNAPSHOT-all.jar');
       } catch (primaryError) {
         console.warn('Primary CheerpJ run failed with classpath /app/', primaryError);
       }
@@ -329,51 +338,57 @@
 
     async function loadData() {
       try {
-        status.textContent = 'Initializing CheerpJ...';
-        await initCheerpJ();
-        status.textContent = 'Loading stronghold.jar...';
+        // status.textContent = 'Initializing CheerpJ...';
+        // await initCheerpJ();
+        // status.textContent = 'Loading stronghold.jar...';
         const seed = seedField.value || defaultSeed;
         const chunkX = chunkXField.value || defaultChunkX;
         const chunkZ = chunkZField.value || defaultChunkZ;
-        status.textContent = `Running stronghold.jar (seed=${seed} chunk=${chunkX},${chunkZ})...`;
-        
-        const data_sh = await runGetStrongholds(seed);
+        // status.textContent = `Running stronghold.jar (seed=${seed} chunk=${chunkX},${chunkZ})...`;
+        const text = status.textContent;
+        const seedMatch = text.match(/seed=(-?\d+)/);
+        const prevSeed = seedMatch ? seedMatch[1] : null;
+        if (prevSeed !== seed) {
+          console.log("Previous seed:", prevSeed, "New seed:", seed);
+          const data_sh = await runGetStrongholds(seed);
 
-        // const strongholdJarPromise = runStrongholdJar(seed, chunkX, chunkZ);
-        // const getStrongholdsPromise = runGetStrongholds(seed);
+          // const strongholdJarPromise = runStrongholdJar(seed, chunkX, chunkZ);
+          // const getStrongholdsPromise = runGetStrongholds(seed);
 
-        // const [data, data_sh] = await Promise.all([strongholdJarPromise, getStrongholdsPromise]);
-        
-        // Store stronghold data and update buttons
-        if (data_sh && data_sh.strongholds) {
-          strongholds = data_sh.strongholds;
-          updateStrongholdButtons();
+          // const [data, data_sh] = await Promise.all([strongholdJarPromise, getStrongholdsPromise]);
           
-          // Calculate and select the best stronghold
-          const bestShResult = get_mpk_stronghold(strongholds);
-          if (bestShResult) {
-            const bestIdx = bestShResult.best_stronghold_idx;
-            const bestSh = strongholds[bestIdx];
+          // Store stronghold data and update buttons
+          if (data_sh && data_sh.strongholds) {
+            strongholds = data_sh.strongholds;
+            updateStrongholdButtons();
             
-            // Update fields with best stronghold
-            chunkXField.value = bestSh.chunkX;
-            chunkZField.value = bestSh.chunkZ;
-            activeStrongholdIndex = bestIdx;
-            
-            // Highlight the best stronghold button
-            [stronghold1, stronghold2, stronghold3].forEach((btn, idx) => {
-              if (idx === activeStrongholdIndex) {
-                btn.style.background = '#99c1f1';
-                btn.style.color = '#000';
-              } else {
-                btn.style.background = '#333';
-                btn.style.color = '#fff';
-              }
-            });
-            
-            console.log(`Selected Stronghold ${bestIdx + 1} at chunk (${bestSh.chunkX}, ${bestSh.chunkZ}) with distance ${bestShResult.best_distance.toFixed(2)}`);
+            // Calculate and select the best stronghold
+            const bestShResult = get_mpk_stronghold(strongholds);
+            if (bestShResult) {
+              const bestIdx = bestShResult.best_stronghold_idx;
+              const bestSh = strongholds[bestIdx];
+              
+              // Update fields with best stronghold
+              chunkXField.value = bestSh.chunkX;
+              chunkZField.value = bestSh.chunkZ;
+              activeStrongholdIndex = bestIdx;
+              
+              // Highlight the best stronghold button
+              [stronghold1, stronghold2, stronghold3].forEach((btn, idx) => {
+                if (idx === activeStrongholdIndex) {
+                  btn.style.background = '#99c1f1';
+                  btn.style.color = '#000';
+                } else {
+                  btn.style.background = '#333';
+                  btn.style.color = '#fff';
+                }
+              });
+              
+              // console.log(`Selected Stronghold ${bestIdx + 1} at chunk (${bestSh.chunkX}, ${bestSh.chunkZ}) with distance ${bestShResult.best_distance.toFixed(2)}`);
+            }
           }
         }
+
         const data = await runStrongholdJar(seed, chunkX, chunkZ);
 
         
@@ -458,7 +473,7 @@
       });
       loadData();
     });
-    
+    await initCheerpJ();
     loadData();
     animate();
   </script>
