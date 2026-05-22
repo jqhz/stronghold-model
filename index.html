@@ -172,8 +172,10 @@
       scene.add(boxHelper);
       sceneObjects.push(boxHelper);
     }
-
-    async function initCheerpJ() {
+    window.cheerpjInitialized = window.cheerpjInitialized || false;
+    async function initCheerpJ() { // 1
+      if (window.cheerpjInitialized) return; // Stop if already running
+      window.cheerpjInitialized = true;
       if (!window.cheerpjInit) {
         throw new Error('CheerpJ loader did not initialize.');
       }
@@ -196,7 +198,7 @@
       }
     }
 
-    async function runStrongholdJar(seed, chunkX, chunkZ) {
+    async function runStrongholdJar(seed, chunkX, chunkZ) { // 4
       await loadJar('./stronghold.jar');
       const args = [String(seed), parseInt(chunkX), parseInt(chunkZ)];
 
@@ -244,16 +246,10 @@
         return await runMainWithClasspath('app/stronghold.jar');
       } catch (primaryError) {
         console.warn('Primary CheerpJ run failed with classpath /app/', primaryError);
-        try {
-          return await runMainWithClasspath(jarName);
-        } catch (secondaryError) {
-          console.warn(`Fallback run failed for ${jarName}, retrying with classpath 'stronghold.jar'.`, secondaryError);
-          return await runMainWithClasspath("./app/stronghold.jar");
-        }
       }
     }
 
-    async function runGetStrongholds(seed) {
+    async function runGetStrongholds(seed) { // 2
       await loadJar('./app-1.0-SNAPSHOT-all.jar');
       const args = [String(seed)];
 
@@ -331,8 +327,13 @@
         const chunkX = chunkXField.value || defaultChunkX;
         const chunkZ = chunkZField.value || defaultChunkZ;
         status.textContent = `Running stronghold.jar (seed=${seed} chunk=${chunkX},${chunkZ})...`;
-        const data = await runStrongholdJar(seed, chunkX, chunkZ);
+        
         const data_sh = await runGetStrongholds(seed);
+
+        // const strongholdJarPromise = runStrongholdJar(seed, chunkX, chunkZ);
+        // const getStrongholdsPromise = runGetStrongholds(seed);
+
+        // const [data, data_sh] = await Promise.all([strongholdJarPromise, getStrongholdsPromise]);
         
         // Store stronghold data and update buttons
         if (data_sh && data_sh.strongholds) {
@@ -364,6 +365,8 @@
             console.log(`Selected Stronghold ${bestIdx + 1} at chunk (${bestSh.chunkX}, ${bestSh.chunkZ}) with distance ${bestShResult.best_distance.toFixed(2)}`);
           }
         }
+        const data = await runStrongholdJar(seed, chunkX, chunkZ);
+
         
         renderData(data);
       } catch (error) {
@@ -372,7 +375,7 @@
       }
     }
 
-    function updateStrongholdButtons() {
+    function updateStrongholdButtons() { 
       const buttons = [stronghold1, stronghold2, stronghold3];
       buttons.forEach((button, index) => {
         if (strongholds[index]) {
