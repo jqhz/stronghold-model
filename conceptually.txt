@@ -22,12 +22,22 @@ Hover over any given room to display the age, and coordinates
 [x] Right side toggle which of the 3 first ring strongholds
 [ ] Chunk borders on
 [ ] Add hover display for information on each room piece (room age, piece type)
-[ ] One time CheerpJ init
-[ ] One time run mpk and jar to get the 3 stronghold pieces
-[ ] Multiple query for the stronghold.jar to get the json model of the stronghold
+[x] One time CheerpJ init
+[x] One time run mpk and jar to get the 3 stronghold pieces if seeds are same
+[x] Multiple query for the stronghold.jar to get the json model of the stronghold
 [ ] Loading status bar/circle on init and rerender
 [ ] MPK only mode (only show the mpk stronghold and hides the other 2)
 [ ] Show path to pr 
 [ ] Show counts for each piece
 [ ] Show other spawners in the near vacinity
-[ ] Async the init and model calls to run concurrently
+[x] Async the init and model calls to run asynchronously
+
+Execution Flow
+
+Run initCheerpJ() once per session
+loadData()
+|-- If a new seed is loaded
+|    |-- runGetStrongholds()
+|-- runStrongholdJar() -> data: JSON
+|-- render(data)
+|

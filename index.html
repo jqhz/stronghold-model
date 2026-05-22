@@ -13,6 +13,11 @@
     #stronghold-picker { position: absolute; top: 10px; right: 10px; z-index: 10; background: rgba(0,0,0,0.55); color: #fff; padding: 10px; border-radius: 6px; }
     #stronghold-picker a { color: #9cf; }
     #stronghold-picker button { display: block; margin: 8px 0; padding: 6px 12px; background: #333; color: #fff; border: none; border-radius: 12px; cursor: pointer; }
+    .loading-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.78); display: flex; align-items: center; justify-content: center; z-index: 30; pointer-events: auto; }
+    .loading-overlay.hidden { display: none; }
+    .loading-content { text-align: center; color: #fff; font-size: 1rem; }
+    .loading-spinner { width: 52px; height: 52px; border: 6px solid rgba(255,255,255,0.18); border-top-color: #82b1ff; border-radius: 50%; animation: spin 0.85s linear infinite; margin: 0 auto 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -29,11 +34,14 @@
     <input type="checkbox" id="toggleChunkborders" checked /> <label for="toggleChunkborders">Show Chunkborder Lines</label><br />
     <input type="checkbox" id="forceMPK" checked /> <label for="forceMPK">Force MPK Stronghold</label><br />
     <strong>Legend</strong><br />
-    <span style="color:#82b1ff">■</span> Start<br />
-    <span style="color:#ff9d00">■</span> PortalRoom<br />
-    <span style="color:#7cff8b">■</span> Library<br />
-    <span style="color:#ff77a9">■</span> SpiralStaircase<br />
-    <span style="color:#8c8c8c">■</span> Other pieces<br />
+    <span style="color:#82b1ff">■</span> Start <span id="legendStartCount">(0/1)</span><br />
+    <span style="color:#ff9d00">■</span> PortalRoom <span id="legendPortalCount">(0/1)</span><br />
+    <span style="color:#7cff8b">■</span> Library <span id="legendLibraryCount">(0/2)</span><br />
+    <span style="color:#ff77a9">■</span> SpiralStaircase <span id="legendSpiralCount">(0)</span><br />
+    <span style="color:#8c8c8c">■</span> Other pieces <span id="legendOtherCount">(0)</span><br />
+    <small style="display:block; margin-top:8px; color:#ccc; line-height:1.4; max-width:260px;">
+      Chunk borders align to Minecraft world coordinates and start at x/z multiples of 16.
+    </small>
   </div>
   <div id="stronghold-picker">
     <button id="stronghold1">Stronghold 1</button>
@@ -41,6 +49,12 @@
     <button id="stronghold3">Stronghold 3</button>
   </div>
   <div id="canvas-container"></div>
+  <div id="loadingOverlay" class="loading-overlay hidden">
+    <div class="loading-content">
+      <div class="loading-spinner"></div>
+      <div id="loadingText">Rendering stronghold model...</div>
+    </div>
+  </div>
   <!-- <script type="module" src="get_mpk_stronghold.js"></script> -->
   <script type="module">
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
@@ -120,6 +134,9 @@
     const chunkXField = document.getElementById('chunkXInput');
     const chunkZField = document.getElementById('chunkZInput');
     const generateField = document.getElementById('generateButton');
+    const toggleChunkborders = document.getElementById('toggleChunkborders');
+    const forceMPK = document.getElementById('forceMPK');
+    const loadingOverlay = document.getElementById('loadingOverlay');
 
     const stronghold1 = document.getElementById('stronghold1');
     const stronghold2 = document.getElementById('stronghold2');
@@ -127,12 +144,27 @@
 
     let strongholds = []; // Store stronghold data
     let activeStrongholdIndex = null; // currently selected stronghold
+    const roomLimits = { Start: 1, PortalRoom: 1, Library: 2 };
+    const loadedJars = new Set();
+    const chunkBorderGroup = new THREE.Group();
+    let pathLine = null;
 
     seedField.value = parseQueryParam('seed', defaultSeed);
     chunkXField.value = parseQueryParam('chunkX', defaultChunkX);
     chunkZField.value = parseQueryParam('chunkZ', defaultChunkZ);
 
     generateField.addEventListener('click', loadData);
+    toggleChunkborders.addEventListener('change', () => {
+      const pieces = sceneObjects.length ? sceneObjects.map(obj => obj.userData).filter(Boolean) : [];
+      if (pieces.length) {
+        const bounds = new THREE.Box3();
+        pieces.forEach(piece => {
+          bounds.expandByPoint(new THREE.Vector3(piece.minX, piece.minY, piece.minZ));
+          bounds.expandByPoint(new THREE.Vector3(piece.maxX, piece.maxY, piece.maxZ));
+        });
+        updateChunkBorders(bounds);
+      }
+    });
 
     function clearScene() {
       while (sceneObjects.length > 0) {
@@ -172,7 +204,133 @@
       const boxHelper = new THREE.Box3Helper(bounds, 0xffff00);
       scene.add(boxHelper);
       sceneObjects.push(boxHelper);
+
+      updateLegendCounts(data.pieces);
+      drawPath(data.pieces);
+      updateChunkBorders(bounds);
     }
+
+    function setLoading(isLoading, message = 'Rendering stronghold model...') {
+      loadingOverlay.classList.toggle('hidden', !isLoading);
+      document.getElementById('loadingText').textContent = message;
+      disableControls(isLoading);
+    }
+
+    function disableControls(disabled) {
+      seedField.disabled = disabled;
+      chunkXField.disabled = disabled;
+      chunkZField.disabled = disabled;
+      generateField.disabled = disabled;
+      toggleChunkborders.disabled = disabled;
+      forceMPK.disabled = disabled;
+      stronghold1.disabled = disabled;
+      stronghold2.disabled = disabled;
+      stronghold3.disabled = disabled;
+    }
+
+    function updateLegendCounts(pieces) {
+      const counts = pieces.reduce((acc, piece) => {
+        acc[piece.type] = (acc[piece.type] || 0) + 1;
+        return acc;
+      }, {});
+      const otherCount = pieces.length - (counts.Start || 0) - (counts.PortalRoom || 0) - (counts.Library || 0) - (counts.SpiralStaircase || 0);
+
+      document.getElementById('legendStartCount').textContent = `(${counts.Start || 0}/${roomLimits.Start})`;
+      document.getElementById('legendPortalCount').textContent = `(${counts.PortalRoom || 0}/${roomLimits.PortalRoom})`;
+      document.getElementById('legendLibraryCount').textContent = `(${counts.Library || 0}/${roomLimits.Library})`;
+      document.getElementById('legendSpiralCount').textContent = `(${counts.SpiralStaircase || 0})`;
+      document.getElementById('legendOtherCount').textContent = `(${otherCount})`;
+    }
+
+    function disposeObject(object) {
+      if (object.geometry) {
+        object.geometry.dispose();
+      }
+      if (object.material) {
+        if (Array.isArray(object.material)) {
+          object.material.forEach(mat => mat.dispose && mat.dispose());
+        } else {
+          object.material.dispose && object.material.dispose();
+        }
+      }
+    }
+
+    function clearChunkBorderGroup() {
+      while (chunkBorderGroup.children.length > 0) {
+        const child = chunkBorderGroup.children.pop();
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+        chunkBorderGroup.remove(child);
+      }
+    }
+
+    function createChunkBorders(bounds) {
+      clearChunkBorderGroup();
+      const minX = Math.floor(bounds.min.x / 16) * 16;
+      const maxX = Math.ceil(bounds.max.x / 16) * 16;
+      const minZ = Math.floor(bounds.min.z / 16) * 16;
+      const maxZ = Math.ceil(bounds.max.z / 16) * 16;
+      const positions = [];
+
+      for (let x = minX; x <= maxX; x += 16) {
+        positions.push(x, 0, minZ, x, 0, maxZ);
+      }
+      for (let z = minZ; z <= maxZ; z += 16) {
+        positions.push(minX, 0, z, maxX, 0, z);
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      const material = new THREE.LineBasicMaterial({ color: 0x999999, opacity: 0.65, transparent: true });
+      const lineSegments = new THREE.LineSegments(geometry, material);
+      chunkBorderGroup.add(lineSegments);
+      chunkBorderGroup.position.y = 0;
+      if (!scene.children.includes(chunkBorderGroup)) {
+        scene.add(chunkBorderGroup);
+      }
+    }
+
+    function updateChunkBorders(bounds) {
+      if (toggleChunkborders.checked) {
+        createChunkBorders(bounds);
+      } else {
+        if (scene.children.includes(chunkBorderGroup)) {
+          scene.remove(chunkBorderGroup);
+        }
+      }
+    }
+
+    function getPieceCenter(piece) {
+      return new THREE.Vector3(
+        piece.minX + (piece.maxX - piece.minX) / 2,
+        piece.minY + (piece.maxY - piece.minY) / 2,
+        piece.minZ + (piece.maxZ - piece.minZ) / 2
+      );
+    }
+
+    function drawPath(pieces) {
+      if (pathLine) {
+        scene.remove(pathLine);
+        disposeObject(pathLine);
+        pathLine = null;
+      }
+
+      const startPiece = pieces.find(piece => piece.type === 'Start');
+      const portalPiece = pieces.find(piece => piece.type === 'PortalRoom');
+      if (!startPiece || !portalPiece) {
+        return;
+      }
+
+      const startCenter = getPieceCenter(startPiece);
+      const portalCenter = getPieceCenter(portalPiece);
+      const pathGeometry = new THREE.BufferGeometry().setFromPoints([startCenter, portalCenter]);
+      const pathMaterial = new THREE.LineDashedMaterial({ color: 0xffff00, dashSize: 8, gapSize: 6, linewidth: 2 });
+      pathLine = new THREE.Line(pathGeometry, pathMaterial);
+      pathLine.computeLineDistances();
+      scene.add(pathLine);
+      sceneObjects.push(pathLine);
+    }
+
     window.cheerpjInitialized = window.cheerpjInitialized || false;
     async function initCheerpJ() { // 1
       if (window.cheerpjInitialized) return; // Stop if already running
@@ -189,11 +347,15 @@
     }
 
     async function loadJar(jarName) {
+      if (loadedJars.has(jarName)) {
+        return;
+      }
       try {
         const jarResult = cheerpjRunJar(jarName);
-        if (jarResult || typeof jarResult.then === 'function') {
+        if (jarResult && typeof jarResult.then === 'function') {
           await jarResult;
         }
+        loadedJars.add(jarName);
       } catch (error) {
         throw new Error(`Failed to load ${jarName}: ${error.message}`);
       }
@@ -251,15 +413,7 @@
         });
       }
 
-      try {
-        const response = await fetch("./stronghold.jar");
-        if (!response.ok) {
-            throw new Error("Jar failed to load");
-        }
-        return await runMainWithClasspath('/app/stronghold.jar');
-      } catch (primaryError) {
-        console.warn('Primary CheerpJ run failed with classpath /app/', primaryError);
-      }
+      return await runMainWithClasspath('/app/stronghold.jar');
     }
 
     async function runGetStrongholds(seed) { // 2
@@ -324,27 +478,15 @@
         return { strongholds };
       }
 
-      try {
-        const response = await fetch("./app-1.0-SNAPSHOT-all.jar");
-
-        if (!response.ok) {
-            throw new Error("Jar failed to load");
-        }
-        return await runMainWithClasspath('/app/app-1.0-SNAPSHOT-all.jar');
-      } catch (primaryError) {
-        console.warn('Primary CheerpJ run failed with classpath /app/', primaryError);
-      }
+      return await runMainWithClasspath('/app/app-1.0-SNAPSHOT-all.jar');
     }
 
     async function loadData() {
+      setLoading(true, 'Loading stronghold data...');
       try {
-        // status.textContent = 'Initializing CheerpJ...';
-        // await initCheerpJ();
-        // status.textContent = 'Loading stronghold.jar...';
         const seed = seedField.value || defaultSeed;
         const chunkX = chunkXField.value || defaultChunkX;
         const chunkZ = chunkZField.value || defaultChunkZ;
-        // status.textContent = `Running stronghold.jar (seed=${seed} chunk=${chunkX},${chunkZ})...`;
         const text = status.textContent;
         const seedMatch = text.match(/seed=(-?\d+)/);
         const prevSeed = seedMatch ? seedMatch[1] : null;
@@ -391,11 +533,12 @@
 
         const data = await runStrongholdJar(seed, chunkX, chunkZ);
 
-        
         renderData(data);
       } catch (error) {
         status.textContent = 'Error loading stronghold data';
         console.error(error);
+      } finally {
+        setLoading(false);
       }
     }
 
