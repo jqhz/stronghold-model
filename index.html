@@ -37,6 +37,7 @@
       <label>Chunk Z <input id="chunkZInput" type="number" step="1" style="width:80px; margin-left:8px;" /></label><br />
       <button id="generateButton" style="margin-top:6px; padding:4px 10px;">Generate</button>
     </div>
+    <input type="checkbox" id="toggleBounds" checked /> <label for="toggleBounds">Show Stronghold Bounds</label><br />
     <input type="checkbox" id="toggleChunkborders" checked /> <label for="toggleChunkborders">Show Chunkborder Lines</label><br />
     <input type="checkbox" id="togglePathline" checked /> <label for="togglePathline">Show Path to Portal</label><br />
     <input type="checkbox" id="forceMPK" checked /> <label for="forceMPK">Force MPK Stronghold</label><br />
@@ -148,6 +149,7 @@
     const chunkXField = document.getElementById('chunkXInput');
     const chunkZField = document.getElementById('chunkZInput');
     const generateField = document.getElementById('generateButton');
+    const toggleBounds = document.getElementById('toggleBounds');
     const toggleChunkborders = document.getElementById('toggleChunkborders');
     const togglePathline = document.getElementById('togglePathline');
     const forceMPK = document.getElementById('forceMPK');
@@ -164,11 +166,13 @@
     const spikeValue = document.getElementById('spikeValue');
 
     let strongholds = []; // Store stronghold data
-    let activeStrongholdIndex = null; // currently selected stronghold
+    let activeStrongholdIndex = null; // stronghold currently rendered
+    let mpkStrongholdIndex = null; // MPK candidate for the loaded seed (label persists until seed changes)
     const roomLimits = { Start: 1, PortalRoom: 1, Library: 2, Stairs: 5 };
     const loadedJars = new Set();
     const chunkBorderGroup = new THREE.Group();
     let pathMesh = null;
+    let boundsHelper = null;
     let currentPieceBounds = null;
     let currentPieceData = [];
     let pieceDepths = [];
@@ -196,6 +200,11 @@
     chunkZField.value = parseQueryParam('chunkZ', defaultChunkZ);
 
     generateField.addEventListener('click', loadData);
+    toggleBounds.addEventListener('change', () => {
+      if (boundsHelper) {
+        boundsHelper.visible = toggleBounds.checked;
+      }
+    });
     toggleChunkborders.addEventListener('change', () => {
       if (currentPieceBounds) {
         updateChunkBorders(currentPieceBounds);
@@ -268,9 +277,17 @@
       camera.position.set(center.x + size.x * 1.2, center.y + size.y * 0.8 + 50, center.z + size.z * 1.2);
       camera.lookAt(center);
 
-      const boxHelper = new THREE.Box3Helper(bounds, 0xffff00);
-      scene.add(boxHelper);
-      sceneObjects.push(boxHelper);
+      if (boundsHelper) {
+        scene.remove(boundsHelper);
+        const helperIndex = sceneObjects.indexOf(boundsHelper);
+        if (helperIndex !== -1) sceneObjects.splice(helperIndex, 1);
+        disposeObject(boundsHelper);
+        boundsHelper = null;
+      }
+      boundsHelper = new THREE.Box3Helper(bounds, 0xffff00);
+      boundsHelper.visible = toggleBounds.checked;
+      scene.add(boundsHelper);
+      sceneObjects.push(boundsHelper);
 
       currentPieceBounds = bounds;
       currentPieceData = data.pieces;
@@ -342,7 +359,7 @@
           const prCenter = getPieceCenter(pieces[i]);
           const startCenter = getPieceCenter(pieces[0]);
           prDistanceValue.textContent = `${parseInt(prCenter.distanceTo(startCenter))}`;
-          spikeValue.textContent = `${prCenter.distanceTo(startCenter) > 70 ? "Too Far (> 70 Blocks)" : 'Yes'}`;
+          spikeValue.textContent = `${prCenter.distanceTo(startCenter) > 64 ? "Too Far (> 64 Blocks)" : 'Yes'}`;
         }
       }
     }
@@ -360,7 +377,9 @@
       chunkXField.disabled = disabled;
       chunkZField.disabled = disabled;
       generateField.disabled = disabled;
+      toggleBounds.disabled = disabled;
       toggleChunkborders.disabled = disabled;
+      togglePathline.disabled = disabled;
       forceMPK.disabled = disabled;
       stronghold1.disabled = disabled;
       stronghold2.disabled = disabled;
@@ -702,42 +721,40 @@
       setLoading(true, 'Loading stronghold data...', 10);
       try {
         const seed = seedField.value || defaultSeed;
-        const chunkX = chunkXField.value || defaultChunkX;
-        const chunkZ = chunkZField.value || defaultChunkZ;
         const text = status.textContent;
         const seedMatch = text.match(/seed=(-?\d+)/);
         const prevSeed = seedMatch ? seedMatch[1] : null;
+        const seedChanged = prevSeed !== null && prevSeed !== seed;
+
+        if (seedChanged) {
+          chunkXField.value = '';
+          chunkZField.value = '';
+          activeStrongholdIndex = null;
+          mpkStrongholdIndex = null;
+        }
+
         if (prevSeed !== seed) {
-          console.log("Previous seed:", prevSeed, "New seed:", seed);
           const data_sh = await runGetStrongholds(seed);
           setLoading(true, 'Loading stronghold candidates...', 40);
 
           if (data_sh && data_sh.strongholds) {
             strongholds = data_sh.strongholds;
-            updateStrongholdButtons();
-            
+
             const bestShResult = get_mpk_stronghold(strongholds);
             if (bestShResult) {
               const bestIdx = bestShResult.best_stronghold_idx;
               const bestSh = strongholds[bestIdx];
-              
+              mpkStrongholdIndex = bestIdx;
+              activeStrongholdIndex = bestIdx;
               chunkXField.value = bestSh.chunkX;
               chunkZField.value = bestSh.chunkZ;
-              activeStrongholdIndex = bestIdx;
-              
-              [stronghold1, stronghold2, stronghold3].forEach((btn, idx) => {
-                if (idx === activeStrongholdIndex) {
-                  btn.textContent = 'MPK ' + btn.textContent;
-                  btn.style.background = '#99c1f1';
-                  btn.style.color = '#000';
-                } else {
-                  btn.style.background = '#333';
-                  btn.style.color = '#fff';
-                }
-              });
             }
+            refreshStrongholdButtons();
           }
         }
+
+        const chunkX = chunkXField.value !== '' ? chunkXField.value : defaultChunkX;
+        const chunkZ = chunkZField.value !== '' ? chunkZField.value : defaultChunkZ;
 
         setLoading(true, 'Running stronghold generator...', 70);
         const data = await runStrongholdJar(seed, chunkX, chunkZ);
@@ -753,23 +770,22 @@
       }
     }
 
-    function updateStrongholdButtons() { 
+    function strongholdButtonLabel(index) {
+      const sh = strongholds[index];
+      if (!sh) return `Stronghold ${index + 1}`;
+      const base = `Stronghold ${index + 1}: (${sh.chunkX}, ${sh.chunkZ}) | (${sh.x}, ${sh.z})`;
+      return mpkStrongholdIndex === index ? `MPK ${base}` : base;
+    }
+
+    function refreshStrongholdButtons() {
       const buttons = [stronghold1, stronghold2, stronghold3];
       buttons.forEach((button, index) => {
         if (strongholds[index]) {
-          const sh = strongholds[index];
-          button.textContent = `Stronghold ${index + 1}: (${sh.chunkX}, ${sh.chunkZ}) | (${sh.x}, ${sh.z})`;
-          button.dataset.index = index;
-          // reflect active state visually
-          if (activeStrongholdIndex !== null && activeStrongholdIndex === index) {
-            button.style.background = '#99c1f1';
-            button.style.color = '#000';
-            button.textContent = 'MPK ' + button.textContent;
-          } else {
-            button.style.background = '#333';
-            button.style.color = '#fff';
-          }
-          button.style.display = 'block';
+          button.textContent = strongholdButtonLabel(index);
+          button.dataset.index = String(index);
+          const isActive = activeStrongholdIndex === index;
+          button.style.background = isActive ? '#99c1f1' : '#333';
+          button.style.color = isActive ? '#000' : '#fff';
         } else {
           button.style.display = 'none';
         }
@@ -777,13 +793,17 @@
       updateForceMPKUI();
     }
 
+    function updateStrongholdButtons() {
+      refreshStrongholdButtons();
+    }
+
     function updateForceMPKUI() {
       const buttons = [stronghold1, stronghold2, stronghold3];
       const isForced = forceMPK.checked;
-      if (isForced && activeStrongholdIndex !== null) {
+      if (isForced && mpkStrongholdIndex !== null) {
 
         buttons.forEach((button, index) => {
-          button.style.display = index === activeStrongholdIndex ? 'block' : 'none';
+          button.style.display = index === mpkStrongholdIndex ? 'block' : 'none';
         });
       } else {
         buttons.forEach(button => {
@@ -807,53 +827,20 @@
       controls.update();
       renderer.render(scene, camera);
     }
-    stronghold1.addEventListener('click', () => {
-      const idx = 0;
-      if (activeStrongholdIndex === idx) return; // already active — do nothing
-      if (!strongholds[idx]) return;
-      const sh = strongholds[idx];
-      chunkXField.value = sh.chunkX;
-      chunkZField.value = sh.chunkZ;
-      activeStrongholdIndex = idx;
-      [stronghold1, stronghold2, stronghold3].forEach((btn, i) => {
-        btn.style.background = i === activeStrongholdIndex ? '#99c1f1' : '#333';
-        btn.style.color = i === activeStrongholdIndex ? '#000' : '#fff';
-      });
-      updateForceMPKUI();
-      loadData();
-    });
-
-    stronghold2.addEventListener('click', () => {
-      const idx = 1;
+    function selectStronghold(idx) {
       if (activeStrongholdIndex === idx) return;
       if (!strongholds[idx]) return;
       const sh = strongholds[idx];
       chunkXField.value = sh.chunkX;
       chunkZField.value = sh.chunkZ;
       activeStrongholdIndex = idx;
-      [stronghold1, stronghold2, stronghold3].forEach((btn, i) => {
-        btn.style.background = i === activeStrongholdIndex ? '#99c1f1' : '#333';
-        btn.style.color = i === activeStrongholdIndex ? '#000' : '#fff';
-      });
-      updateForceMPKUI();
+      refreshStrongholdButtons();
       loadData();
-    });
+    }
 
-    stronghold3.addEventListener('click', () => {
-      const idx = 2;
-      if (activeStrongholdIndex === idx) return;
-      if (!strongholds[idx]) return;
-      const sh = strongholds[idx];
-      chunkXField.value = sh.chunkX;
-      chunkZField.value = sh.chunkZ;
-      activeStrongholdIndex = idx;
-      [stronghold1, stronghold2, stronghold3].forEach((btn, i) => {
-        btn.style.background = i === activeStrongholdIndex ? '#99c1f1' : '#333';
-        btn.style.color = i === activeStrongholdIndex ? '#000' : '#fff';
-      });
-      updateForceMPKUI();
-      loadData();
-    });
+    stronghold1.addEventListener('click', () => selectStronghold(0));
+    stronghold2.addEventListener('click', () => selectStronghold(1));
+    stronghold3.addEventListener('click', () => selectStronghold(2));
     await initCheerpJ();
     loadData();
     animate();
