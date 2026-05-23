@@ -1,3 +1,5 @@
+## Usage
+
 Paste in Minecraft 1.16.1 seed
 
 Using seedfinder libraries, it gets the 3 strongholds from within the first ring. 
@@ -32,7 +34,7 @@ Hover over any given room to display the age, and coordinates
 [ ] Show other spawners in the near vacinity
 [x] Async the init and model calls to run asynchronously
 
-Execution Flow
+## Execution Flow
 
 Run initCheerpJ() once per session
 loadData()

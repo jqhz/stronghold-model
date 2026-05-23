@@ -26,8 +26,11 @@
 <body>
   <div id="info">
     <strong>Stronghold Viewer</strong><br />
-    Drag to orbit, scroll to zoom, middle-click to pan.<br />
+    <!-- Drag to orbit, scroll to zoom, middle-click to pan.<br /> -->
     <span id="status">Loading stronghold data...</span><br />
+    <span id="prDepth">Portal Room Depth: <span id="prDepthValue">(0)</span></span><br />
+    <span id="prDistance">Portal Room Blocks to Start: <span id="prDistanceValue">(0)</span></span><br />
+    <span id="spike"> Can get spike? <span id="spikeValue"></span></span><br />
     <div id="controls" style="margin-top:8px; line-height:1.6;">
       <label>Seed <input id="seedInput" type="text" style="width:220px;" /></label><br />
       <label>Chunk X <input id="chunkXInput" type="number" step="1" style="width:80px;" /></label>
@@ -38,15 +41,16 @@
     <input type="checkbox" id="togglePathline" checked /> <label for="togglePathline">Show Path to Portal</label><br />
     <input type="checkbox" id="forceMPK" checked /> <label for="forceMPK">Force MPK Stronghold</label><br />
     <strong>Legend</strong><br />
+    <span> Total Rooms: <span id="legendTotalRooms">(0)</span></span><br />
     <span style="color:#82b1ff">■</span> Start <span id="legendStartCount">(0/1)</span><br />
     <span style="color:#ff9d00">■</span> PortalRoom <span id="legendPortalCount">(0/1)</span><br />
     <span style="color:#7cff8b">■</span> Library <span id="legendLibraryCount">(0/2)</span><br />
     <span style="color:#ff77a9">■</span> SpiralStaircase <span id="legendSpiralCount">(0)</span><br />
     <span style="color:#972851">■</span> StraightStaircase <span id="legendStraightCount">(0)</span><br />
     <span style="color:#8c8c8c">■</span> Other pieces <span id="legendOtherCount">(0)</span><br />
-    <small style="display:block; margin-top:8px; color:#ccc; line-height:1.4; max-width:260px;">
+    <!-- <small style="display:block; margin-top:8px; color:#ccc; line-height:1.4; max-width:260px;">
       Chunk borders align to Minecraft world coordinates and start at x/z multiples of 16.
-    </small>
+    </small> -->
   </div>
   <div id="stronghold-picker">
     <button id="stronghold1">Stronghold 1</button>
@@ -155,6 +159,10 @@
     const stronghold2 = document.getElementById('stronghold2');
     const stronghold3 = document.getElementById('stronghold3');
 
+    const prDepthValue = document.getElementById('prDepthValue');
+    const prDistanceValue = document.getElementById('prDistanceValue');
+    const spikeValue = document.getElementById('spikeValue');
+
     let strongholds = []; // Store stronghold data
     let activeStrongholdIndex = null; // currently selected stronghold
     const roomLimits = { Start: 1, PortalRoom: 1, Library: 2, Stairs: 5 };
@@ -165,6 +173,7 @@
     let currentPieceData = [];
     let pieceDepths = [];
     let pieceAges = [];
+    
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     let hoveredObject = null;
@@ -219,7 +228,10 @@
     }
 
     function renderData(data) {
-      status.textContent = `seed=${String(data.worldSeed)} chunk=${data.chunkX},${data.chunkZ} start=${data.startX},${data.startZ}`;
+      status.textContent = `seed=${String(data.worldSeed)} chunk=(${data.chunkX},${data.chunkZ}) start=(${data.startX},${data.startZ}) \n`;
+      prDepthValue.textContent = `${prDepthValue}`;
+      prDistanceValue.textContent = `${parseInt(prDistanceValue)}`;
+      spikeValue.textContent = `${prDistanceValue > 70 ? "Too Far (> 70 Blocks)" : 'Yes'}`;
       clearScene();
       data.pieces.forEach(addBox);
 
@@ -304,6 +316,13 @@
           pieces[i].depth = null;
           pieceDepths[i] = null;
         }
+        if (pieces[i].type === 'PortalRoom') {
+          prDepthValue.textContent = `${depth[i]}`;
+          const prCenter = getPieceCenter(pieces[i]);
+          const startCenter = getPieceCenter(pieces[0]);
+          prDistanceValue.textContent = `${parseInt(prCenter.distanceTo(startCenter))}`;
+          spikeValue.textContent = `${prCenter.distanceTo(startCenter) > 70 ? "Too Far (> 70 Blocks)" : 'Yes'}`;
+        }
       }
     }
 
@@ -333,7 +352,7 @@
         return acc;
       }, {});
       const otherCount = pieces.length - (counts.Start || 0) - (counts.PortalRoom || 0) - (counts.Library || 0) - (counts.SpiralStaircase || 0) - (counts.Stairs || 0);
-
+      document.getElementById('legendTotalRooms').textContent = `(${pieces.length})`;
       document.getElementById('legendStartCount').textContent = `(${counts.Start || 0}/${roomLimits.Start})`;
       document.getElementById('legendPortalCount').textContent = `(${counts.PortalRoom || 0}/${roomLimits.PortalRoom})`;
       document.getElementById('legendLibraryCount').textContent = `(${counts.Library || 0}/${roomLimits.Library})`;
@@ -687,6 +706,7 @@
               
               [stronghold1, stronghold2, stronghold3].forEach((btn, idx) => {
                 if (idx === activeStrongholdIndex) {
+                  btn.textContent = 'MPK ' + btn.textContent;
                   btn.style.background = '#99c1f1';
                   btn.style.color = '#000';
                 } else {
@@ -723,6 +743,7 @@
           if (activeStrongholdIndex !== null && activeStrongholdIndex === index) {
             button.style.background = '#99c1f1';
             button.style.color = '#000';
+            button.textContent = 'MPK ' + button.textContent;
           } else {
             button.style.background = '#333';
             button.style.color = '#fff';
