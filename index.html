@@ -248,26 +248,61 @@
     }
 
     function computePieceDepths(pieces) {
+      // Assign ages directly from the JSON order (1-indexed)
       pieceAges = pieces.map((_, i) => i + 1);
+      for (let i = 0; i < pieces.length; i++) {
+        pieces[i].age = pieceAges[i];
+      }
+
+      // Prepare depth and path containers
       pieceDepths = new Array(pieces.length).fill(null);
       const graph = buildGraph(pieces);
+      // If there's no start node, leave depths null but ages are still assigned
       if (graph.startIndex === -1) {
+        for (let i = 0; i < pieces.length; i++) {
+          pieces[i].depth = null;
+          pieces[i].path = null;
+        }
         return;
       }
 
-      const visited = new Array(pieces.length).fill(false);
+      // BFS from the start index to compute shortest-path depths and predecessor chain
+      const prev = new Array(pieces.length).fill(-1);
+      const depth = new Array(pieces.length).fill(null);
       const queue = [graph.startIndex];
-      visited[graph.startIndex] = true;
-      pieceDepths[graph.startIndex] = 0;
+      depth[graph.startIndex] = 0;
+      prev[graph.startIndex] = -1;
 
-      while (queue.length) {
-        const current = queue.shift();
+      let qi = 0;
+      while (qi < queue.length) {
+        const current = queue[qi++];
         for (const neighbor of graph.adj.get(current) || []) {
-          if (!visited[neighbor]) {
-            visited[neighbor] = true;
-            pieceDepths[neighbor] = pieceDepths[current] + 1;
+          if (depth[neighbor] === null) {
+            depth[neighbor] = depth[current] + 1;
+            prev[neighbor] = current;
             queue.push(neighbor);
           }
+        }
+      }
+
+      // Reconstruct paths and assign depths
+      for (let i = 0; i < pieces.length; i++) {
+        if (depth[i] != null) {
+          // reconstruct path from start -> i
+          const path = [];
+          let cur = i;
+          while (cur !== -1) {
+            path.push(cur);
+            cur = prev[cur];
+          }
+          path.reverse();
+          pieces[i].path = path;
+          pieces[i].depth = depth[i];
+          pieceDepths[i] = depth[i];
+        } else {
+          pieces[i].path = null;
+          pieces[i].depth = null;
+          pieceDepths[i] = null;
         }
       }
     }
@@ -461,7 +496,7 @@
         const pieces = sceneObjects.map(o => o.userData).filter(Boolean);
         const index = pieces.indexOf(piece);
         const age = (typeof piece.age !== 'undefined') ? piece.age : (pieceAges[index] != null ? pieceAges[index] : index + 1);
-        const depth = (pieceDepths[index] != null) ? pieceDepths[index] : 'N/A';
+        const depth = (typeof piece.depth !== 'undefined' && piece.depth !== null) ? piece.depth : (pieceDepths[index] != null ? pieceDepths[index] : 'N/A');
         tooltip.style.left = `${event.clientX + 12}px`;
         tooltip.style.top = `${event.clientY + 12}px`;
         tooltip.innerHTML = `<strong>${piece.type}</strong><br/>Age: ${age}<br/>Depth: ${depth}`;
