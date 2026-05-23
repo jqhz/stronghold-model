@@ -228,10 +228,31 @@
     }
 
     function renderData(data) {
-      status.textContent = `seed=${String(data.worldSeed)} chunk=(${data.chunkX},${data.chunkZ}) start=(${data.startX},${data.startZ}) \n`;
-      prDepthValue.textContent = `${prDepthValue}`;
-      prDistanceValue.textContent = `${parseInt(prDistanceValue)}`;
-      spikeValue.textContent = `${prDistanceValue > 70 ? "Too Far (> 70 Blocks)" : 'Yes'}`;
+      let orientation = '';
+      const p1 = data.pieces[0].minX;
+      const p2 = data.pieces[0].minZ;
+      const p3 = data.pieces[0].maxX;
+      const p4 = data.pieces[0].maxZ;
+      const p5 = data.pieces[1].minX;
+      const p6 = data.pieces[1].minZ;
+      const p7 = data.pieces[1].maxX;
+      const p8 = data.pieces[1].maxZ;
+
+      if (Math.abs(p4 - p6) === 1)
+        orientation = 'South (+Z)';
+      else if (Math.abs(p2 - p8) === 1)
+        orientation = 'North (-Z)';
+      else if (Math.abs(p1 - p7) === 1)
+        orientation = 'West (-X)';
+      else if (Math.abs(p3 - p5) === 1)
+        orientation = 'East (+X)';
+      else
+        orientation = 'Unknown';
+
+      status.textContent = `seed=${String(data.worldSeed)} \n chunk=(${data.chunkX},${data.chunkZ}) start=(${data.startX},${data.startZ}) \n orientation=${orientation}`; ;
+      // prDepthValue.textContent = `${prDepthValue}`;
+      // prDistanceValue.textContent = `${parseInt(prDistanceValue)}`;
+      // spikeValue.textContent = `${prDistanceValue > 70 ? "Too Far (> 70 Blocks)" : 'Yes'}`;
       clearScene();
       data.pieces.forEach(addBox);
 
