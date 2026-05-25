@@ -45,8 +45,9 @@ export function buildGraph(pieces) {
   return { nodes, adj, startIndex, portalIndex };
 }
 
-export function shortestPath(adj, startIdx, targetIdx) {
+export function shortestPath(adj, startIdx, targetIdx, canVisit = () => true) {
   if (startIdx === -1 || targetIdx === -1) return null;
+  if (!canVisit(startIdx) || !canVisit(targetIdx)) return null;
   const q = [startIdx];
   const prev = new Map();
   prev.set(startIdx, null);
@@ -55,7 +56,7 @@ export function shortestPath(adj, startIdx, targetIdx) {
     if (cur === targetIdx) break;
     const neighbors = adj.get(cur) || [];
     for (const nb of neighbors) {
-      if (!prev.has(nb)) {
+      if (!prev.has(nb) && canVisit(nb)) {
         prev.set(nb, cur);
         q.push(nb);
       }
@@ -70,4 +71,14 @@ export function shortestPath(adj, startIdx, targetIdx) {
   }
   path.reverse();
   return path;
+}
+
+// Shortest start→portal path; if the shortest route passes through a Library, use the
+// shortest route that does not (libraries are not valid corridor connections).
+export function shortestPathAvoidingLibraries(adj, pieces, startIdx, targetIdx) {
+  const path = shortestPath(adj, startIdx, targetIdx);
+  if (!path) return null;
+  if (!path.some(i => pieces[i].type === 'Library')) return path;
+  const noLibrary = (i) => pieces[i].type !== 'Library';
+  return shortestPath(adj, startIdx, targetIdx, noLibrary);
 }

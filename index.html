@@ -7,7 +7,42 @@
   <script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script>
   <style>
     body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
-    #info { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.55); color: #fff; padding: 10px; border-radius: 6px; max-width: 320px; }
+    #sidebarToggle {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 20;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border: none;
+      border-radius: 6px;
+      background: rgba(0,0,0,0.65);
+      color: #fff;
+      font-size: 1.1rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+    #sidebarToggle:hover { background: rgba(0,0,0,0.85); }
+    #info {
+      position: absolute;
+      top: 52px;
+      left: 10px;
+      z-index: 10;
+      background: rgba(0,0,0,0.55);
+      color: #fff;
+      padding: 10px;
+      border-radius: 6px;
+      max-width: min(320px, calc(100vw - 20px));
+      max-height: calc(100vh - 62px);
+      overflow-y: auto;
+      transition: transform 0.25s ease, opacity 0.2s ease;
+    }
+    #info.sidebar-hidden {
+      transform: translateX(calc(-100% - 24px));
+      opacity: 0;
+      pointer-events: none;
+    }
     #info a { color: #9cf; }
     #canvas-container { width: 100vw; height: 100vh; }
     #stronghold-picker { position: absolute; top: 10px; right: 10px; z-index: 10; background: rgba(0,0,0,0.55); color: #fff; padding: 10px; border-radius: 6px; }
@@ -28,6 +63,7 @@
   <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
+  <button id="sidebarToggle" type="button" aria-controls="info" aria-expanded="true" title="Hide controls">✕</button>
   <div id="info">
     <strong>Stronghold Viewer</strong><br />
     <!-- Drag to orbit, scroll to zoom, middle-click to pan.<br /> -->
@@ -77,7 +113,7 @@
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
     import { OrbitControls } from './OrbitControls.module.js';
     import { get_mpk_stronghold } from './get_mpk_stronghold.js';
-    import { buildGraph, shortestPath } from './pathfinder.js';
+    import { buildGraph, shortestPathAvoidingLibraries } from './pathfinder.js';
 
     const container = document.getElementById('canvas-container');
     const status = document.getElementById('status');
@@ -172,6 +208,8 @@
     let strongholds = []; // Store stronghold data
     let activeStrongholdIndex = null; // stronghold currently rendered
     let mpkStrongholdIndex = null; // MPK candidate for the loaded seed (label persists until seed changes)
+    let multiStrongholdMode = false; // false until user runs Generate (bundled json is single stronghold)
+    let strongholdsDiscovered = false; // true after runGetStrongholds has run for the current seed context
     const roomLimits = { Start: 1, PortalRoom: 1, Library: 2, Stairs: 5 };
     const loadedJars = new Set();
     const chunkBorderGroup = new THREE.Group();
@@ -203,7 +241,19 @@
     chunkXField.value = parseQueryParam('chunkX', defaultChunkX);
     chunkZField.value = parseQueryParam('chunkZ', defaultChunkZ);
 
-    generateField.addEventListener('click', loadData);
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const infoPanel = document.getElementById('info');
+    sidebarToggle.addEventListener('click', () => {
+      const hidden = infoPanel.classList.toggle('sidebar-hidden');
+      sidebarToggle.textContent = hidden ? '☰' : '✕';
+      sidebarToggle.title = hidden ? 'Show controls' : 'Hide controls';
+      sidebarToggle.setAttribute('aria-expanded', String(!hidden));
+    });
+
+    generateField.addEventListener('click', () => {
+      multiStrongholdMode = true;
+      loadData();
+    });
     toggleBounds.addEventListener('change', () => {
       if (boundsHelper) {
         boundsHelper.visible = toggleBounds.checked;
@@ -381,6 +431,7 @@
       chunkXField.disabled = disabled;
       chunkZField.disabled = disabled;
       generateField.disabled = disabled;
+      sidebarToggle.disabled = disabled;
       toggleBounds.disabled = disabled;
       toggleChunkborders.disabled = disabled;
       togglePathline.disabled = disabled;
@@ -502,7 +553,7 @@
 
       const graph = buildGraph(pieces);
       if (graph.startIndex === -1 || graph.portalIndex === -1) return;
-      const pathIdx = shortestPath(graph.adj, graph.startIndex, graph.portalIndex);
+      const pathIdx = shortestPathAvoidingLibraries(graph.adj, pieces, graph.startIndex, graph.portalIndex);
       if (!pathIdx || pathIdx.length === 0) return;
 
       const points = pathIdx.map(i => getPieceCenter(pieces[i]));
@@ -721,9 +772,48 @@
       return await runMainWithClasspath('/app/app-1.0-SNAPSHOT-all.jar');
     }
 
+    function normalizeStrongholdJson(data) {
+      return {
+        ...data,
+        worldSeed: String(data.worldSeed),
+      };
+    }
+
+    async function loadBundledStronghold() {
+      setLoading(true, 'Loading bundled stronghold...', 40);
+      try {
+        const response = await fetch('./stronghold.json');
+        if (!response.ok) throw new Error(`Failed to load stronghold.json (${response.status})`);
+        const data = normalizeStrongholdJson(await response.json());
+
+        seedField.value = data.worldSeed;
+        chunkXField.value = data.chunkX;
+        chunkZField.value = data.chunkZ;
+
+        strongholds = [{
+          x: data.chunkX * 16,
+          z: data.chunkZ * 16,
+          chunkX: data.chunkX,
+          chunkZ: data.chunkZ,
+        }];
+        mpkStrongholdIndex = 0;
+        activeStrongholdIndex = 0;
+
+        setLoading(true, 'Rendering stronghold model...', 85);
+        renderData(data);
+        refreshStrongholdButtons();
+      } catch (error) {
+        status.textContent = 'Error loading bundled stronghold';
+        console.error(error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
     async function loadData() {
       setLoading(true, 'Loading stronghold data...', 10);
       try {
+        await initCheerpJ();
         const seed = seedField.value || defaultSeed;
         const text = status.textContent;
         const seedMatch = text.match(/seed=(-?\d+)/);
@@ -735,9 +825,10 @@
           chunkZField.value = '';
           activeStrongholdIndex = null;
           mpkStrongholdIndex = null;
+          strongholdsDiscovered = false;
         }
 
-        if (prevSeed !== seed) {
+        if (!strongholdsDiscovered || prevSeed !== seed) {
           const data_sh = await runGetStrongholds(seed);
           setLoading(true, 'Loading stronghold candidates...', 40);
 
@@ -754,6 +845,7 @@
               chunkZField.value = bestSh.chunkZ;
             }
             refreshStrongholdButtons();
+            strongholdsDiscovered = true;
           }
         }
 
@@ -784,6 +876,10 @@
     function refreshStrongholdButtons() {
       const buttons = [stronghold1, stronghold2, stronghold3];
       buttons.forEach((button, index) => {
+        if (!multiStrongholdMode && index > 0) {
+          button.style.display = 'none';
+          return;
+        }
         if (strongholds[index]) {
           button.textContent = strongholdButtonLabel(index);
           button.dataset.index = String(index);
@@ -845,8 +941,7 @@
     stronghold1.addEventListener('click', () => selectStronghold(0));
     stronghold2.addEventListener('click', () => selectStronghold(1));
     stronghold3.addEventListener('click', () => selectStronghold(2));
-    await initCheerpJ();
-    loadData();
+    await loadBundledStronghold();
     animate();
   </script>
 </body>
