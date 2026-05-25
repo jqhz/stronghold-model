@@ -695,13 +695,7 @@
         }
 
         const rawJson = captured.slice(start, end + 1);
-        const fixedJson = rawJson.replace(/("worldSeed"\s*:\s*)(-?\d+)/, '$1"$2"');
-        return JSON.parse(fixedJson, (key, value) => {
-          if (key === 'worldSeed') {
-            return String(value);
-          }
-          return value;
-        });
+        return parseStrongholdJson(rawJson);
       }
 
       return await runMainWithClasspath('/app/stronghold.jar');
@@ -772,11 +766,13 @@
       return await runMainWithClasspath('/app/app-1.0-SNAPSHOT-all.jar');
     }
 
-    function normalizeStrongholdJson(data) {
-      return {
-        ...data,
-        worldSeed: String(data.worldSeed),
-      };
+    // JSON numbers cannot represent 64-bit Minecraft seeds; quote worldSeed before parse.
+    function parseStrongholdJson(text) {
+      const fixedJson = text.replace(/("worldSeed"\s*:\s*)(-?\d+)/, '$1"$2"');
+      return JSON.parse(fixedJson, (key, value) => {
+        if (key === 'worldSeed') return String(value);
+        return value;
+      });
     }
 
     async function loadBundledStronghold() {
@@ -784,7 +780,7 @@
       try {
         const response = await fetch('./stronghold.json');
         if (!response.ok) throw new Error(`Failed to load stronghold.json (${response.status})`);
-        const data = normalizeStrongholdJson(await response.json());
+        const data = parseStrongholdJson(await response.text());
 
         seedField.value = data.worldSeed;
         chunkXField.value = data.chunkX;
