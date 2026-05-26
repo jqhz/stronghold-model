@@ -84,6 +84,7 @@
       <label>Chunk X <input id="chunkXInput" type="number" step="1" style="width:80px;" /></label>
       <label>Chunk Z <input id="chunkZInput" type="number" step="1" style="width:80px; margin-left:8px;" /></label><br />
       <button id="generateButton" style="margin-top:6px; padding:4px 10px;">Generate</button>
+      <button id="copyTeleportButton" style="margin-top:6px; padding:4px 10px; margin-left:8px;">Copy Teleport</button>
     </div>
     <input type="checkbox" id="toggleBounds" checked /> <label for="toggleBounds">Show Stronghold Bounds</label><br />
     <input type="checkbox" id="toggleChunkborders" checked /> <label for="toggleChunkborders">Show Chunkborder Lines</label><br />
@@ -285,6 +286,7 @@
     const chunkXField = document.getElementById('chunkXInput');
     const chunkZField = document.getElementById('chunkZInput');
     const generateField = document.getElementById('generateButton');
+    const copyTeleportField = document.getElementById('copyTeleportButton');
     const toggleBounds = document.getElementById('toggleBounds');
     const toggleChunkborders = document.getElementById('toggleChunkborders');
     const togglePathline = document.getElementById('togglePathline');
@@ -356,6 +358,15 @@
     generateField.addEventListener('click', () => {
       multiStrongholdMode = true;
       loadData();
+    });
+    copyTeleportField.addEventListener('click', () => {
+      if (activeStrongholdIndex == null) return;;
+      const teleportCommand = `/tp @s ${chunkXField.value * 16 + 4} 40 ${chunkZField.value * 16 + 4}`;
+      navigator.clipboard.writeText(teleportCommand).then(() => {
+        console.log(`Teleport command copied to clipboard:\n${teleportCommand}`);
+      }).catch(() => {
+        console.error('Failed to copy teleport command to clipboard.');
+      });
     });
     toggleBounds.addEventListener('change', () => {
       if (boundsHelper) {
