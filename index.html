@@ -90,6 +90,8 @@
     <span style="color:#972851">■</span> StraightStaircase <span id="legendStraightCount">(0)</span><br />
     <span style="color:#38388f">■</span> SquareRoom <span id="legendSquareCount">(0)</span><br />
     <span style="color:#908c3f">■</span> ChestCorridor <span id="legendChestCorridorCount">(0)</span><br />
+    <span style="color:#ff5555">■</span> PrisonHall <span id="legendPrisonHallCount">(0)</span><br />
+    <span style="color:#68175d">■</span> FiveWayCrossing <span id="legendFiveWayCrossingCount">(0)</span><br />
     <span style="color:#8c8c8c">■</span> Other pieces <span id="legendOtherCount">(0)</span><br />
     <!-- <small style="display:block; margin-top:8px; color:#ccc; line-height:1.4; max-width:260px;">
       Chunk borders align to Minecraft world coordinates and start at x/z multiples of 16.
@@ -176,6 +178,8 @@
       Stairs: new THREE.MeshPhongMaterial({ color: 0x972851, opacity: 0.85, transparent: true }),
       SquareRoom: new THREE.MeshPhongMaterial({ color: 0x38388f, opacity: 0.85, transparent: true }),
       ChestCorridor: new THREE.MeshPhongMaterial({ color: 0x908c3f, opacity: 0.85, transparent: true }),
+      PrisonHall: new THREE.MeshPhongMaterial({ color: 0xff5555, opacity: 0.85, transparent: true }),
+      FiveWayCrossing: new THREE.MeshPhongMaterial({ color: 0x68175d, opacity: 0.85, transparent: true }),
       default: new THREE.MeshPhongMaterial({ color: 0x8c8c8c, opacity: 0.85, transparent: true })
     };
 
@@ -233,7 +237,7 @@
     let mpkStrongholdIndex = null; // MPK candidate for the loaded seed (label persists until seed changes)
     let multiStrongholdMode = false; // false until user runs Generate (bundled json is single stronghold)
     let strongholdsDiscovered = false; // true after runGetStrongholds has run for the current seed context
-    const roomLimits = { Start: 1, PortalRoom: 1, Library: 2, Stairs: 5 , SquareRoom: 6, PrisonHall: 5, FiveWayCrossing: 4, ChestCorridor: 4 };
+    const roomLimits = { Start: 1, PortalRoom: 1, Library: 2, Stairs: 5 , SquareRoom: 6, PrisonHall: 5, FiveWayCrossing: 4, ChestCorridor: 4, FiveWayCrossing: 5, PrisonHall: 5 };
     const loadedJars = new Set();
     const chunkBorderGroup = new THREE.Group();
     let pathMesh = null;
@@ -476,7 +480,7 @@
         acc[piece.type] = (acc[piece.type] || 0) + 1;
         return acc;
       }, {});
-      const otherCount = pieces.length - (counts.Start || 0) - (counts.PortalRoom || 0) - (counts.Library || 0) - (counts.SpiralStaircase || 0) - (counts.Stairs || 0) - (counts.SquareRoom || 0) - (counts.ChestCorridor || 0);
+      const otherCount = pieces.length - (counts.Start || 0) - (counts.PortalRoom || 0) - (counts.Library || 0) - (counts.SpiralStaircase || 0) - (counts.Stairs || 0) - (counts.SquareRoom || 0) - (counts.ChestCorridor || 0) - (counts.PrisonHall || 0) - (counts.FiveWayCrossing || 0);
       document.getElementById('legendTotalRooms').textContent = `(${pieces.length})`;
       document.getElementById('legendStartCount').textContent = `(${counts.Start || 0}/${roomLimits.Start})`;
       document.getElementById('legendSquareCount').textContent = `(${counts.SquareRoom || 0}/${roomLimits.SquareRoom})`;
@@ -485,6 +489,8 @@
       document.getElementById('legendStraightCount').textContent = `(${counts.Stairs || 0}/${roomLimits.Stairs})`;
       document.getElementById('legendSpiralCount').textContent = `(${counts.SpiralStaircase || 0}/${roomLimits.Stairs})`;
       document.getElementById('legendChestCorridorCount').textContent = `(${counts.ChestCorridor || 0}/${roomLimits.ChestCorridor})`;
+      document.getElementById('legendPrisonHallCount').textContent = `(${counts.PrisonHall || 0}/${roomLimits.PrisonHall})`;
+      document.getElementById('legendFiveWayCrossingCount').textContent = `(${counts.FiveWayCrossing || 0}/${roomLimits.FiveWayCrossing}) Counting Starter`;
       document.getElementById('legendOtherCount').textContent = `(${otherCount})`;
     }
 
@@ -678,7 +684,7 @@
 
       // Path includes PrisonHall nodes; line uses non–PrisonHall centers (bridges across jail offset).
       const points = pathIdx
-        .filter(i => !isPrisonHall(pieces[i]))
+        // .filter(i => !isPrisonHall(pieces[i]))
         .map(i => getPieceCenter(pieces[i]));
       const pathGeometry = new THREE.BufferGeometry().setFromPoints(points);
       const pathMaterial = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 8, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false });
