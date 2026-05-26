@@ -1,6 +1,4 @@
-// Simple pathfinder for room pieces.
-// Exports: buildGraph(pieces) -> { nodes: [], adj: Map(index->Array(indexes)), startIndex, portalIndex }
-// shortestPath(adj, startIdx, targetIdx) -> Array of node indices using BFS (unweighted shortest path)
+// Pathfinder for stronghold room pieces (graph build + generation-order path).
 
 export function isPrisonHall(piece) {
   return piece.type === 'PrisonHall';
@@ -10,44 +8,53 @@ export function isFiveWay(piece) {
   return piece.type === 'FiveWayCrossing';
 }
 
-// Corridor alignment coords for each 5-way arm (two openings per corner extension).
-// Values are taken from the 5-way bbox per orientation; the checked axis is perpendicular to the
-// connection face (N/S → X, E/W → Z) using the same min/max offsets from the spec.
-function fiveWayExtensionCoords(fiveWay, direction) {
+export function isSmallCorridor(piece) {
+  return piece.type === 'SmallCorridor';
+}
+
+export function isLibrary(piece) {
+  return piece.type === 'Library';
+}
+
+export function pieceAge(pieces, idx) {
+  const p = pieces[idx];
+  return p.age != null ? p.age : idx + 1;
+}
+
+function overlapLength(a0, a1, b0, b1) {
+  return Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+}
+
+export function centerXZ(piece) {
+  return {
+    x: (piece.minX + piece.maxX) / 2,
+    z: (piece.minZ + piece.maxZ) / 2,
+  };
+}
+
+const OPPOSITE_DIR = { N: 'S', S: 'N', E: 'W', W: 'E' };
+
+// Per-arm opening coords (perpendicular axis): N/S → X, E/W → Z.
+export function fiveWayExtensionCoords(fiveWay, direction) {
   const minX = Math.min(fiveWay.minX, fiveWay.maxX);
   const maxX = Math.max(fiveWay.minX, fiveWay.maxX);
   const minZ = Math.min(fiveWay.minZ, fiveWay.maxZ);
   const maxZ = Math.max(fiveWay.minZ, fiveWay.maxZ);
   switch (direction) {
     case 'N':
-      return { axis: 'x', values: [maxX - 2, maxX - 8] };
+      return { axis: 'x', near: maxX - 2, far: maxX - 8 };
     case 'S':
-      return { axis: 'x', values: [minX + 2, minX + 8] };
+      return { axis: 'x', near: minX + 2, far: minX + 8 };
     case 'E':
-      return { axis: 'z', values: [minZ + 2, minZ + 8] };
+      return { axis: 'z', near: minZ + 2, far: minZ + 8 };
     case 'W':
-      return { axis: 'z', values: [maxZ - 2, maxZ - 8] };
+      return { axis: 'z', near: maxZ - 2, far: maxZ - 8 };
     default:
       return null;
   }
 }
 
-// Literal spec labels (for debug logging).
-function fiveWayExtensionSpec(fiveWay, direction) {
-  const minX = Math.min(fiveWay.minX, fiveWay.maxX);
-  const maxX = Math.max(fiveWay.minX, fiveWay.maxX);
-  const minZ = Math.min(fiveWay.minZ, fiveWay.maxZ);
-  const maxZ = Math.max(fiveWay.minZ, fiveWay.maxZ);
-  switch (direction) {
-    case 'N': return { label: 'maxZ-2,maxZ-8', values: [maxZ - 2, maxZ - 8] };
-    case 'S': return { label: 'minZ+2,minZ+8', values: [minZ + 2, minZ + 8] };
-    case 'E': return { label: 'minX+2,minX+8', values: [minX + 2, minX + 8] };
-    case 'W': return { label: 'maxX-2,maxX-8', values: [maxX - 2, maxX - 8] };
-    default: return null;
-  }
-}
-
-function connectionDirectionFromFiveWay(fiveWay, other) {
+export function connectionDirectionFromFiveWay(fiveWay, other) {
   const fx0 = Math.min(fiveWay.minX, fiveWay.maxX);
   const fx1 = Math.max(fiveWay.minX, fiveWay.maxX);
   const fz0 = Math.min(fiveWay.minZ, fiveWay.maxZ);
@@ -62,7 +69,6 @@ function connectionDirectionFromFiveWay(fiveWay, other) {
   const xOverlap = Math.max(0, Math.min(ox1, fx1) - Math.max(ox0, fx0));
   const zOverlap = Math.max(0, Math.min(oz1, fz1) - Math.max(oz0, fz0));
 
-  // Use the face that actually touches (avoids mis-labeling corner contacts as E/W).
   if (zDist <= 1 && xOverlap >= 2) {
     const omidZ = (oz0 + oz1) / 2;
     const fmidZ = (fz0 + fz1) / 2;
@@ -82,52 +88,152 @@ function connectionDirectionFromFiveWay(fiveWay, other) {
   return o.z > fw.z ? 'S' : 'N';
 }
 
-function centerXZ(piece) {
-  return {
-    x: (piece.minX + piece.maxX) / 2,
-    z: (piece.minZ + piece.maxZ) / 2,
-  };
+export function fiveWayOpeningSide(fiveWay, armDir, piece) {
+  const ext = fiveWayExtensionCoords(fiveWay, armDir);
+  if (!ext) return null;
+  const coord = ext.axis === 'x' ? centerXZ(piece).x : centerXZ(piece).z;
+  return Math.abs(coord - ext.near) <= Math.abs(coord - ext.far) ? 'near' : 'far';
 }
 
-function alignsWithFiveWayExtension(fiveWay, other, direction, centerTol) {
-  const ext = fiveWayExtensionCoords(fiveWay, direction);
-  if (!ext) return false;
-  const nb = centerXZ(other);
+export function fiveWayCorridorCenterXZ(fiveWay, entranceDir) {
+  const minX = Math.min(fiveWay.minX, fiveWay.maxX);
+  const maxX = Math.max(fiveWay.minX, fiveWay.maxX);
+  const minZ = Math.min(fiveWay.minZ, fiveWay.maxZ);
+  const maxZ = Math.max(fiveWay.minZ, fiveWay.maxZ);
+  const midX = (minX + maxX) / 2;
+  const midZ = (minZ + maxZ) / 2;
+
+  if (entranceDir === 'N' || entranceDir === 'S') {
+    const ext = fiveWayExtensionCoords(fiveWay, entranceDir);
+    const corridorX = (ext.near + ext.far) / 2;
+    const offsetX = Math.round(midX) + (corridorX > midX ? 1 : corridorX < midX ? -1 : 0);
+    return { x: offsetX, z: midZ };
+  }
+  const ext = fiveWayExtensionCoords(fiveWay, entranceDir);
+  const corridorZ = (ext.near + ext.far) / 2;
+  const offsetZ = Math.round(midZ) + (corridorZ > midZ ? 1 : corridorZ < midZ ? -1 : 0);
+  return { x: midX, z: offsetZ };
+}
+
+function faceTouchMetrics(a, b) {
+  const ax0 = Math.min(a.minX, a.maxX), ax1 = Math.max(a.minX, a.maxX);
+  const az0 = Math.min(a.minZ, a.maxZ), az1 = Math.max(a.minZ, a.maxZ);
+  const ay0 = Math.min(a.minY, a.maxY), ay1 = Math.max(a.minY, a.maxY);
+  const bx0 = Math.min(b.minX, b.maxX), bx1 = Math.max(b.minX, b.maxX);
+  const bz0 = Math.min(b.minZ, b.maxZ), bz1 = Math.max(b.minZ, b.maxZ);
+  const by0 = Math.min(b.minY, b.maxY), by1 = Math.max(b.minY, b.maxY);
+
+  const xDist = Math.max(0, Math.max(bx0 - ax1, ax0 - bx1));
+  const zDist = Math.max(0, Math.max(bz0 - az1, az0 - bz1));
+  const xOverlap = overlapLength(ax0, ax1, bx0, bx1);
+  const zOverlap = overlapLength(az0, az1, bz0, bz1);
+  const yOverlap = overlapLength(ay0, ay1, by0, by1);
+
+  const xFaceTouch = xDist <= 1 && zOverlap >= 2;
+  const zFaceTouch = zDist <= 1 && xOverlap >= 2;
+  return { xFaceTouch, zFaceTouch, yOverlap, xOverlap, zOverlap };
+}
+
+function overlapMidpoint(a, b, axis) {
+  if (axis === 'x') {
+    const lo = Math.max(Math.min(a.minX, a.maxX), Math.min(b.minX, b.maxX));
+    const hi = Math.min(Math.max(a.minX, a.maxX), Math.max(b.minX, b.maxX));
+    return (lo + hi) / 2;
+  }
+  const lo = Math.max(Math.min(a.minZ, a.maxZ), Math.min(b.minZ, b.maxZ));
+  const hi = Math.min(Math.max(a.minZ, a.maxZ), Math.max(b.minZ, b.maxZ));
+  return (lo + hi) / 2;
+}
+
+function coordOnAxis(piece, axis) {
+  return axis === 'x' ? centerXZ(piece).x : centerXZ(piece).z;
+}
+
+function alignsOpening(piece, ext, centerTol) {
   const lo = ext.axis === 'x'
-    ? Math.min(other.minX, other.maxX)
-    : Math.min(other.minZ, other.maxZ);
+    ? Math.min(piece.minX, piece.maxX)
+    : Math.min(piece.minZ, piece.maxZ);
   const hi = ext.axis === 'x'
-    ? Math.max(other.minX, other.maxX)
-    : Math.max(other.minZ, other.maxZ);
-  const coord = ext.axis === 'x' ? nb.x : nb.z;
-  const centerMatch = ext.values.some(v => Math.abs(coord - v) <= centerTol);
-  const bboxMatch = ext.values.some(v => v >= lo - centerTol && v <= hi + centerTol);
-  return centerMatch || bboxMatch;
+    ? Math.max(piece.minX, piece.maxX)
+    : Math.max(piece.minZ, piece.maxZ);
+  const coord = coordOnAxis(piece, ext.axis);
+  const openings = [ext.near, ext.far];
+  return openings.some(v =>
+    Math.abs(coord - v) <= centerTol || (v >= lo - centerTol && v <= hi + centerTol)
+  );
 }
 
-function standardPerpendicularAligned(a, b, xFaceTouch, zFaceTouch, centerTol) {
-  const centerA = centerXZ(a);
-  const centerB = centerXZ(b);
-  const xFaceAligned = xFaceTouch && Math.abs(centerA.z - centerB.z) <= centerTol;
-  const zFaceAligned = zFaceTouch && Math.abs(centerA.x - centerB.x) <= centerTol;
-  return xFaceAligned || zFaceAligned;
+// Corridor room center aligned to tunnel on holder's face (uses room center, not holder bbox center).
+function alignsCorridorToFace(room, holder, faceDir, centerTol) {
+  const { xFaceTouch, zFaceTouch } = faceTouchMetrics(holder, room);
+  const c = centerXZ(room);
+  if (faceDir === 'E' || faceDir === 'W') {
+    if (!xFaceTouch) return false;
+    const tunnelZ = overlapMidpoint(holder, room, 'z');
+    return Math.abs(c.z - tunnelZ) <= centerTol;
+  }
+  if (!zFaceTouch) return false;
+  const tunnelX = overlapMidpoint(holder, room, 'x');
+  return Math.abs(c.x - tunnelX) <= centerTol;
 }
 
-export function pieceChunkPos(piece) {
-  const cx = (piece.minX + piece.maxX) / 2;
-  const cz = (piece.minZ + piece.maxZ) / 2;
-  return { x: Math.floor(cx / 16), z: Math.floor(cz / 16) };
+function alignsWithFiveWayArm(fiveWay, other, exitDir, centerTol) {
+  const ext = fiveWayExtensionCoords(fiveWay, exitDir);
+  if (!ext) return false;
+  return alignsOpening(other, ext, centerTol);
 }
 
-// PrisonHall bbox centers are offset by the jail; for chunk/culling steps skip them and
-// bridge from the previous non–PrisonHall room to the next (piece path still includes them).
+export function fiveWayExitAllows(fiveWay, entranceDir, fromPiece, other, centerTol = 2) {
+  const exitDir = connectionDirectionFromFiveWay(fiveWay, other);
+  if (exitDir === entranceDir) return false;
+
+  if (exitDir === OPPOSITE_DIR[entranceDir]) {
+    return alignsWithFiveWayArm(fiveWay, other, exitDir, centerTol);
+  }
+
+  const inSide = fiveWayOpeningSide(fiveWay, entranceDir, fromPiece);
+  const outSide = fiveWayOpeningSide(fiveWay, exitDir, other);
+  if (!inSide || !outSide || inSide !== outSide) return false;
+  return alignsWithFiveWayArm(fiveWay, other, exitDir, centerTol);
+}
+
+// Prison hall: 1 entrance / 1 exit — align using the corridor room's center on the shared face.
+function prisonHallAdjacent(ph, corridorRoom, centerTol = 2) {
+  const { xFaceTouch, zFaceTouch, yOverlap } = faceTouchMetrics(ph, corridorRoom);
+  if (yOverlap <= 0) return false;
+  if (!xFaceTouch && !zFaceTouch) return false;
+  const faceDir = connectionDirectionFromFiveWay(ph, corridorRoom);
+  return alignsCorridorToFace(corridorRoom, ph, faceDir, centerTol);
+}
+
+export function pathingCenterXZ(piece, prevPiece, entranceDir = null) {
+  if (isPrisonHall(piece) && prevPiece) {
+    return centerXZ(prevPiece);
+  }
+  if (isFiveWay(piece) && entranceDir) {
+    return fiveWayCorridorCenterXZ(piece, entranceDir);
+  }
+  return centerXZ(piece);
+}
+
+export function pieceChunkPos(piece, prevPiece = null, entranceDir = null) {
+  const c = pathingCenterXZ(piece, prevPiece, entranceDir);
+  return { x: Math.floor(c.x / 16), z: Math.floor(c.z / 16) };
+}
+
 export function buildChunkPathSkippingPrisonHalls(pieces, pathIdx) {
   const chunkPath = [];
-  for (const idx of pathIdx) {
+  for (let i = 0; i < pathIdx.length; i++) {
+    const idx = pathIdx[i];
     if (isPrisonHall(pieces[idx])) continue;
-    const c = pieceChunkPos(pieces[idx]);
-    const prev = chunkPath[chunkPath.length - 1];
-    if (!prev || prev.x !== c.x || prev.z !== c.z) {
+    const prev = i > 0 ? pieces[pathIdx[i - 1]] : null;
+    let entranceDir = null;
+    if (isFiveWay(pieces[idx]) && prev) {
+      entranceDir = connectionDirectionFromFiveWay(pieces[idx], prev);
+    }
+    const c = pieceChunkPos(pieces[idx], prev, entranceDir);
+    const last = chunkPath[chunkPath.length - 1];
+    if (!last || last.x !== c.x || last.z !== c.z) {
       chunkPath.push(c);
     }
   }
@@ -138,92 +244,33 @@ export function buildGraph(pieces) {
   const nodes = pieces.map((p, i) => ({ ...p, index: i }));
   const adj = new Map();
 
-  function overlapLength(a0, a1, b0, b1) {
-    return Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
-  }
-
-  // Cardinal face adjacency only: touching on one horizontal axis, overlapping on the
-  // other, Y overlap, and room centers aligned on the corridor axis (no corner cuts).
   function boxesAdjacent(a, b) {
-    const ax0 = Math.min(a.minX, a.maxX), ax1 = Math.max(a.minX, a.maxX);
-    const az0 = Math.min(a.minZ, a.maxZ), az1 = Math.max(a.minZ, a.maxZ);
-    const ay0 = Math.min(a.minY, a.maxY), ay1 = Math.max(a.minY, a.maxY);
-
-    const bx0 = Math.min(b.minX, b.maxX), bx1 = Math.max(b.minX, b.maxX);
-    const bz0 = Math.min(b.minZ, b.maxZ), bz1 = Math.max(b.minZ, b.maxZ);
-    const by0 = Math.min(b.minY, b.maxY), by1 = Math.max(b.minY, b.maxY);
-
-    const xDist = Math.max(0, Math.max(bx0 - ax1, ax0 - bx1));
-    const zDist = Math.max(0, Math.max(bz0 - az1, az0 - bz1));
-    const xOverlap = overlapLength(ax0, ax1, bx0, bx1);
-    const zOverlap = overlapLength(az0, az1, bz0, bz1);
-    const yOverlap = overlapLength(ay0, ay1, by0, by1);
-
+    const { xFaceTouch, zFaceTouch, yOverlap } = faceTouchMetrics(a, b);
     if (yOverlap <= 0) return false;
 
     const centerTol = 2;
-    const xFaceTouch = xDist <= 1 && zOverlap >= 2;
-    const zFaceTouch = zDist <= 1 && xOverlap >= 2;
 
-    // PrisonHall centers are shifted by the jail wing; use face overlap only for those links.
     if (isPrisonHall(a) || isPrisonHall(b)) {
-      if (xDist <= 1 && zDist <= 1 && !(xFaceTouch || zFaceTouch)) {
-        return false;
-      }
-      return xFaceTouch || zFaceTouch;
+      const ph = isPrisonHall(a) ? a : b;
+      const other = ph === a ? b : a;
+      return prisonHallAdjacent(ph, other, centerTol);
     }
 
     const fiveWay = isFiveWay(a) ? a : isFiveWay(b) ? b : null;
     if (fiveWay) {
       const other = fiveWay === a ? b : a;
-      const dir = connectionDirectionFromFiveWay(fiveWay, other);
-      const faceTouch = (dir === 'E' || dir === 'W') ? xFaceTouch : zFaceTouch;
-      const extensionAligned = alignsWithFiveWayExtension(fiveWay, other, dir, centerTol);
-      const fallbackAligned = standardPerpendicularAligned(fiveWay, other, xFaceTouch, zFaceTouch, centerTol);
-      const aligned = extensionAligned || fallbackAligned;
-      if (!faceTouch) {
-        if (xDist <= 2 && zDist <= 2) {
-          console.log('[adjacency] FiveWay face miss', {
-            fiveWayIdx: fiveWay.index,
-            otherType: other.type,
-            dir,
-            xDist,
-            zDist,
-            xOverlap,
-            zOverlap,
-          });
-        }
-        return false;
-      }
-      if (!aligned) {
-        const ext = fiveWayExtensionCoords(fiveWay, dir);
-        const nb = centerXZ(other);
-        console.log('[adjacency] FiveWay alignment miss', {
-          fiveWayIdx: fiveWay.index,
-          otherType: other.type,
-          dir,
-          extension: ext,
-          spec: fiveWayExtensionSpec(fiveWay, dir),
-          otherCenter: nb,
-          extensionAligned,
-          fallbackAligned,
-        });
-        return false;
-      }
-      return true;
+      const exitDir = connectionDirectionFromFiveWay(fiveWay, other);
+      const faceTouch = (exitDir === 'E' || exitDir === 'W') ? xFaceTouch : zFaceTouch;
+      if (!faceTouch) return false;
+      return alignsWithFiveWayArm(fiveWay, other, exitDir, centerTol);
     }
 
     const centerA = centerXZ(a);
     const centerB = centerXZ(b);
-
     const xFaceAligned = xFaceTouch && Math.abs(centerA.z - centerB.z) <= centerTol;
     const zFaceAligned = zFaceTouch && Math.abs(centerA.x - centerB.x) <= centerTol;
 
-    // Reject corner-only contact where both axes are within touch distance.
-    if (xDist <= 1 && zDist <= 1 && !(xFaceAligned || zFaceAligned)) {
-      return false;
-    }
-
+    if (xFaceTouch && zFaceTouch && !(xFaceAligned || zFaceAligned)) return false;
     return xFaceAligned || zFaceAligned;
   }
 
@@ -246,6 +293,74 @@ export function buildGraph(pieces) {
   return { nodes, adj, startIndex, portalIndex };
 }
 
+export function canVisitForPath(pieces, idx) {
+  return !isLibrary(pieces[idx]) && !isSmallCorridor(pieces[idx]);
+}
+
+// Nodes that can reach the portal following strictly increasing piece age.
+export function computeCanReachPortal(adj, pieces, portalIdx) {
+  const canReach = new Set([portalIdx]);
+  const q = [portalIdx];
+  while (q.length) {
+    const c = q.shift();
+    for (let i = 0; i < pieces.length; i++) {
+      if (!canVisitForPath(pieces, i)) continue;
+      if (!(adj.get(i) || []).includes(c)) continue;
+      if (pieceAge(pieces, c) <= pieceAge(pieces, i)) continue;
+      if (!canReach.has(i)) {
+        canReach.add(i);
+        q.push(i);
+      }
+    }
+  }
+  return canReach;
+}
+
+// Generation spine: each step goes to the lowest-age neighbor that can still reach the portal.
+export function findGenerationPath(adj, pieces, startIdx, targetIdx) {
+  if (startIdx === -1 || targetIdx === -1) return null;
+  if (!canVisitForPath(pieces, startIdx) || !canVisitForPath(pieces, targetIdx)) return null;
+
+  const canReach = computeCanReachPortal(adj, pieces, targetIdx);
+  if (!canReach.has(startIdx)) {
+    console.log('[path] start cannot reach portal under age rules');
+    return null;
+  }
+
+  const path = [startIdx];
+  let cur = startIdx;
+  const visited = new Set([startIdx]);
+
+  while (cur !== targetIdx) {
+    const candidates = (adj.get(cur) || []).filter(nb =>
+      canVisitForPath(pieces, nb) &&
+      !visited.has(nb) &&
+      pieceAge(pieces, nb) > pieceAge(pieces, cur) &&
+      canReach.has(nb)
+    );
+
+    if (!candidates.length) {
+      console.log('[path] stuck at piece age', pieceAge(pieces, cur), pieces[cur].type);
+      break;
+    }
+
+    candidates.sort((a, b) => pieceAge(pieces, a) - pieceAge(pieces, b));
+    const next = candidates[0];
+    path.push(next);
+    visited.add(next);
+    cur = next;
+  }
+
+  if (cur !== targetIdx) return null;
+
+  console.log('[path] generation path', {
+    len: path.length,
+    ages: path.map(i => pieceAge(pieces, i)),
+    types: path.map(i => pieces[i].type),
+  });
+  return path;
+}
+
 export function shortestPath(adj, startIdx, targetIdx, canVisit = () => true) {
   if (startIdx === -1 || targetIdx === -1) return null;
   if (!canVisit(startIdx) || !canVisit(targetIdx)) return null;
@@ -255,8 +370,7 @@ export function shortestPath(adj, startIdx, targetIdx, canVisit = () => true) {
   while (q.length) {
     const cur = q.shift();
     if (cur === targetIdx) break;
-    const neighbors = adj.get(cur) || [];
-    for (const nb of neighbors) {
+    for (const nb of adj.get(cur) || []) {
       if (!prev.has(nb) && canVisit(nb)) {
         prev.set(nb, cur);
         q.push(nb);
@@ -274,30 +388,43 @@ export function shortestPath(adj, startIdx, targetIdx, canVisit = () => true) {
   return path;
 }
 
-// Shortest start→portal path; if the shortest route passes through a Library, use the
-// shortest route that does not (libraries are not valid corridor connections).
 export function shortestPathAvoidingLibraries(adj, pieces, startIdx, targetIdx) {
-  const path = shortestPath(adj, startIdx, targetIdx);
-  if (!path) {
-    console.log('[path] no route', {
-      startIdx,
-      startType: pieces[startIdx]?.type,
-      targetIdx,
-      targetType: pieces[targetIdx]?.type,
-      startNeighbors: (adj.get(startIdx) || []).length,
-    });
-    return null;
+  const path = findGenerationPath(adj, pieces, startIdx, targetIdx);
+  if (path) return path;
+
+  const fallback = shortestPath(adj, startIdx, targetIdx, i => canVisitForPath(pieces, i));
+  if (fallback) {
+    console.log('[path] fallback (hop-only)', { len: fallback.length, ages: fallback.map(i => pieceAge(pieces, i)) });
+    return fallback;
   }
-  if (!path.some(i => pieces[i].type === 'Library')) return path;
-  const noLibrary = (i) => pieces[i].type !== 'Library';
-  const noLibPath = shortestPath(adj, startIdx, targetIdx, noLibrary);
-  if (!noLibPath) {
-    console.log('[path] no library-free route; using path with library', {
-      startIdx,
-      targetIdx,
-      pathLen: path.length,
-    });
-    return path;
+  console.log('[path] no route', { startIdx, targetIdx });
+  return null;
+}
+
+export function buildPathPoints(pieces, pathIdx, toVector3) {
+  const points = [];
+  for (let i = 0; i < pathIdx.length; i++) {
+    const piece = pieces[pathIdx[i]];
+    const prev = i > 0 ? pieces[pathIdx[i - 1]] : null;
+    const next = i < pathIdx.length - 1 ? pieces[pathIdx[i + 1]] : null;
+    let entranceDir = null;
+    if (isFiveWay(piece) && prev) {
+      entranceDir = connectionDirectionFromFiveWay(piece, prev);
+    }
+    let xz;
+    if (isPrisonHall(piece)) {
+      if (prev && next) {
+        const fromC = centerXZ(prev);
+        const toC = centerXZ(next);
+        xz = { x: (fromC.x + toC.x) / 2, z: (fromC.z + toC.z) / 2 };
+      } else {
+        xz = pathingCenterXZ(piece, prev, entranceDir);
+      }
+    } else {
+      xz = pathingCenterXZ(piece, prev, entranceDir);
+    }
+    const y = (piece.minY + piece.maxY) / 2;
+    points.push(toVector3(xz.x, y, xz.z));
   }
-  return noLibPath;
+  return points;
 }

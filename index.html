@@ -120,9 +120,10 @@
     import {
       buildGraph,
       shortestPathAvoidingLibraries,
-      isPrisonHall,
       buildChunkPathSkippingPrisonHalls,
+      buildPathPoints,
       pieceChunkPos,
+      connectionDirectionFromFiveWay,
     } from './pathfinder.js';
 
     const container = document.getElementById('canvas-container');
@@ -682,10 +683,8 @@
       }
       console.log('[drawPath] path length', pathIdx.length, 'types', pathIdx.map(i => pieces[i].type).join(' -> '));
 
-      // Path includes PrisonHall nodes; line uses non–PrisonHall centers (bridges across jail offset).
-      const points = pathIdx
-        // .filter(i => !isPrisonHall(pieces[i]))
-        .map(i => getPieceCenter(pieces[i]));
+      // Path uses pathing centers (5-way corridor / previous room width for prison halls); meshes stay full bbox.
+      const points = buildPathPoints(pieces, pathIdx, (x, y, z) => new THREE.Vector3(x, y, z));
       const pathGeometry = new THREE.BufferGeometry().setFromPoints(points);
       const pathMaterial = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 8, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false });
       pathMesh = new THREE.Line(pathGeometry, pathMaterial);
