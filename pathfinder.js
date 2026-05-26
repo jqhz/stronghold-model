@@ -297,6 +297,10 @@ export function canVisitForPath(pieces, idx) {
   return !isLibrary(pieces[idx]) && !isSmallCorridor(pieces[idx]);
 }
 
+export function canVisitForOptimalPath(pieces, idx) {
+  return !isLibrary(pieces[idx]);
+}
+
 // Nodes that can reach the portal following strictly increasing piece age.
 export function computeCanReachPortal(adj, pieces, portalIdx) {
   const canReach = new Set([portalIdx]);
@@ -398,6 +402,17 @@ export function shortestPathAvoidingLibraries(adj, pieces, startIdx, targetIdx) 
     return fallback;
   }
   console.log('[path] no route', { startIdx, targetIdx });
+  return null;
+}
+
+// Shortest hop path: allows SmallCorridor, no generation-order age constraint.
+export function shortestPathOptimalToPortal(adj, pieces, startIdx, targetIdx) {
+  const path = shortestPath(adj, startIdx, targetIdx, i => canVisitForOptimalPath(pieces, i));
+  if (path) {
+    console.log('[path] optimal', { len: path.length, ages: path.map(i => pieceAge(pieces, i)) });
+    return path;
+  }
+  console.log('[path] no optimal route', { startIdx, targetIdx });
   return null;
 }
 

@@ -56,6 +56,14 @@
     .loading-bar-fill { height: 100%; background: linear-gradient(90deg, #82b1ff 0%, #ffff00 100%); width: 0%; transition: width 0.2s ease; }
     .loading-percentage { margin-top: 8px; font-size: 0.85rem; color: #ccc; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    #legendToggle { cursor: pointer; user-select: none; }
+    #legendToggle:hover { color: #9cf; }
+    #legendItems.collapsed { display: none; }
+    #colorSettings { margin-top: 8px; }
+    #colorSettings summary { cursor: pointer; user-select: none; }
+    #colorSettings summary:hover { color: #9cf; }
+    .color-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 0.9rem; }
+    .color-row input[type="color"] { width: 28px; height: 22px; padding: 0; border: 1px solid #555; border-radius: 4px; cursor: pointer; background: transparent; }
   </style>
   <script>
     window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
@@ -80,19 +88,27 @@
     <input type="checkbox" id="toggleBounds" checked /> <label for="toggleBounds">Show Stronghold Bounds</label><br />
     <input type="checkbox" id="toggleChunkborders" checked /> <label for="toggleChunkborders">Show Chunkborder Lines</label><br />
     <input type="checkbox" id="togglePathline" checked /> <label for="togglePathline">Show Path to Portal</label><br />
+    <input type="checkbox" id="toggleOptimalPathline" checked /> <label for="toggleOptimalPathline">Show Optimal Path to Portal</label><br />
     <input type="checkbox" id="forceMPK" checked /> <label for="forceMPK">Force MPK Stronghold</label><br />
-    <strong>Legend</strong><br />
+    <details id="colorSettings">
+      <summary>Piece colors</summary>
+      <div id="colorInputs"></div>
+      <button id="resetColors" type="button" style="margin-top:6px; padding:2px 8px; font-size:0.85rem;">Reset to defaults</button>
+    </details>
+    <strong id="legendToggle" title="Click to expand/collapse">Legend ▼</strong><br />
+    <div id="legendItems">
     <span> Total Rooms: <span id="legendTotalRooms">(0)</span></span><br />
-    <span style="color:#82b1ff">■</span> Start <span id="legendStartCount">(0/1)</span><br />
-    <span style="color:#ff9d00">■</span> PortalRoom <span id="legendPortalCount">(0/1)</span><br />
-    <span style="color:#7cff8b">■</span> Library <span id="legendLibraryCount">(0/2)</span><br />
-    <span style="color:#ff77a9">■</span> SpiralStaircase <span id="legendSpiralCount">(0)</span><br />
-    <span style="color:#972851">■</span> StraightStaircase <span id="legendStraightCount">(0)</span><br />
-    <span style="color:#38388f">■</span> SquareRoom <span id="legendSquareCount">(0)</span><br />
-    <span style="color:#908c3f">■</span> ChestCorridor <span id="legendChestCorridorCount">(0)</span><br />
-    <span style="color:#ff5555">■</span> PrisonHall <span id="legendPrisonHallCount">(0)</span><br />
-    <span style="color:#68175d">■</span> FiveWayCrossing <span id="legendFiveWayCrossingCount">(0)</span><br />
-    <span style="color:#8c8c8c">■</span> Other pieces <span id="legendOtherCount">(0)</span><br />
+    <span class="legend-swatch" data-type="Start" style="color:#82b1ff">■</span> Start <span id="legendStartCount">(0/1)</span><br />
+    <span class="legend-swatch" data-type="PortalRoom" style="color:#ff9d00">■</span> PortalRoom <span id="legendPortalCount">(0/1)</span><br />
+    <span class="legend-swatch" data-type="Library" style="color:#7cff8b">■</span> Library <span id="legendLibraryCount">(0/2)</span><br />
+    <span class="legend-swatch" data-type="SpiralStaircase" style="color:#ff77a9">■</span> SpiralStaircase <span id="legendSpiralCount">(0)</span><br />
+    <span class="legend-swatch" data-type="Stairs" style="color:#972851">■</span> StraightStaircase <span id="legendStraightCount">(0)</span><br />
+    <span class="legend-swatch" data-type="SquareRoom" style="color:#38388f">■</span> SquareRoom <span id="legendSquareCount">(0)</span><br />
+    <span class="legend-swatch" data-type="ChestCorridor" style="color:#908c3f">■</span> ChestCorridor <span id="legendChestCorridorCount">(0)</span><br />
+    <span class="legend-swatch" data-type="PrisonHall" style="color:#ff5555">■</span> PrisonHall <span id="legendPrisonHallCount">(0)</span><br />
+    <span class="legend-swatch" data-type="FiveWayCrossing" style="color:#68175d">■</span> FiveWayCrossing <span id="legendFiveWayCrossingCount">(0)</span><br />
+    <span class="legend-swatch" data-type="default" style="color:#8c8c8c">■</span> Other pieces <span id="legendOtherCount">(0)</span><br />
+    </div>
     <!-- <small style="display:block; margin-top:8px; color:#ccc; line-height:1.4; max-width:260px;">
       Chunk borders align to Minecraft world coordinates and start at x/z multiples of 16.
     </small> -->
@@ -120,6 +136,7 @@
     import {
       buildGraph,
       shortestPathAvoidingLibraries,
+      shortestPathOptimalToPortal,
       buildChunkPathSkippingPrisonHalls,
       buildPathPoints,
       pieceChunkPos,
@@ -171,21 +188,72 @@
     PortalRoom, 20, 1
 
     */
-    const pieceMaterials = {
-      Start: new THREE.MeshPhongMaterial({ color: 0x82b1ff, opacity: 0.85, transparent: true }),
-      PortalRoom: new THREE.MeshPhongMaterial({ color: 0xff9d00, opacity: 0.85, transparent: true }),
-      Library: new THREE.MeshPhongMaterial({ color: 0x7cff8b, opacity: 0.85, transparent: true }),
-      SpiralStaircase: new THREE.MeshPhongMaterial({ color: 0xff77a9, opacity: 0.85, transparent: true }),
-      Stairs: new THREE.MeshPhongMaterial({ color: 0x972851, opacity: 0.85, transparent: true }),
-      SquareRoom: new THREE.MeshPhongMaterial({ color: 0x38388f, opacity: 0.85, transparent: true }),
-      ChestCorridor: new THREE.MeshPhongMaterial({ color: 0x908c3f, opacity: 0.85, transparent: true }),
-      PrisonHall: new THREE.MeshPhongMaterial({ color: 0xff5555, opacity: 0.85, transparent: true }),
-      FiveWayCrossing: new THREE.MeshPhongMaterial({ color: 0x68175d, opacity: 0.85, transparent: true }),
-      default: new THREE.MeshPhongMaterial({ color: 0x8c8c8c, opacity: 0.85, transparent: true })
+    const DEFAULT_PIECE_COLORS = {
+      Start: '#82b1ff',
+      PortalRoom: '#ff9d00',
+      Library: '#7cff8b',
+      SpiralStaircase: '#ff77a9',
+      Stairs: '#972851',
+      SquareRoom: '#38388f',
+      ChestCorridor: '#908c3f',
+      PrisonHall: '#ff5555',
+      FiveWayCrossing: '#68175d',
+      default: '#8c8c8c',
     };
+
+    const PIECE_COLOR_TYPES = Object.keys(DEFAULT_PIECE_COLORS);
+    const COLOR_STORAGE_KEY = 'stronghold-piece-colors';
+
+    function loadPieceColors() {
+      try {
+        const stored = localStorage.getItem(COLOR_STORAGE_KEY);
+        if (stored) return { ...DEFAULT_PIECE_COLORS, ...JSON.parse(stored) };
+      } catch (_) { /* ignore */ }
+      return { ...DEFAULT_PIECE_COLORS };
+    }
+
+    let pieceColors = loadPieceColors();
+    const pieceMaterials = {};
+
+    function syncPieceMaterials() {
+      for (const type of PIECE_COLOR_TYPES) {
+        const hex = pieceColors[type];
+        if (!pieceMaterials[type]) {
+          pieceMaterials[type] = new THREE.MeshPhongMaterial({ color: hex, opacity: 0.85, transparent: true });
+        } else {
+          pieceMaterials[type].color.set(hex);
+        }
+      }
+    }
+    syncPieceMaterials();
+
+    function savePieceColors() {
+      localStorage.setItem(COLOR_STORAGE_KEY, JSON.stringify(pieceColors));
+    }
 
     function materialFor(type) {
       return pieceMaterials[type] || pieceMaterials.default;
+    }
+
+    const NAMED_PIECE_TYPES = PIECE_COLOR_TYPES.filter(t => t !== 'default');
+
+    function updateMeshColorsForType(type) {
+      const mat = materialFor(type === 'default' ? undefined : type);
+      for (const obj of sceneObjects) {
+        if (!obj.isMesh || !obj.userData) continue;
+        const pieceType = obj.userData.type;
+        const matches = type === 'default'
+          ? !NAMED_PIECE_TYPES.includes(pieceType)
+          : pieceType === type;
+        if (matches) obj.material.color.copy(mat.color);
+      }
+    }
+
+    function updateLegendSwatches() {
+      document.querySelectorAll('.legend-swatch').forEach(el => {
+        const type = el.dataset.type;
+        el.style.color = pieceColors[type] || pieceColors.default;
+      });
     }
 
     function addBox(piece) {
@@ -220,7 +288,12 @@
     const toggleBounds = document.getElementById('toggleBounds');
     const toggleChunkborders = document.getElementById('toggleChunkborders');
     const togglePathline = document.getElementById('togglePathline');
+    const toggleOptimalPathline = document.getElementById('toggleOptimalPathline');
     const forceMPK = document.getElementById('forceMPK');
+    const colorInputs = document.getElementById('colorInputs');
+    const resetColorsBtn = document.getElementById('resetColors');
+    const legendToggle = document.getElementById('legendToggle');
+    const legendItems = document.getElementById('legendItems');
     const loadingOverlay = document.getElementById('loadingOverlay');
     const loadingBarFill = document.getElementById('loadingBarFill');
     const loadingPercentage = document.getElementById('loadingPercentage');
@@ -242,6 +315,8 @@
     const loadedJars = new Set();
     const chunkBorderGroup = new THREE.Group();
     let pathMesh = null;
+    let optimalPathMesh = null;
+    let tooltipHideTimer = null;
     let boundsHelper = null;
     let currentPieceBounds = null;
     let currentPieceData = [];
@@ -294,11 +369,62 @@
     });
     togglePathline.addEventListener('change', () => {
       if (currentPieceData.length) {
-        drawPath(currentPieceData);
+        drawPaths(currentPieceData);
+      }
+    });
+    toggleOptimalPathline.addEventListener('change', () => {
+      if (currentPieceData.length) {
+        drawPaths(currentPieceData);
       }
     });
     forceMPK.addEventListener('change', updateForceMPKUI);
     updateForceMPKUI();
+
+    function buildColorControls() {
+      colorInputs.innerHTML = '';
+      for (const type of PIECE_COLOR_TYPES) {
+        const label = type === 'default' ? 'Other pieces' : type;
+        const row = document.createElement('div');
+        row.className = 'color-row';
+        const input = document.createElement('input');
+        input.type = 'color';
+        input.id = `color-${type}`;
+        input.value = pieceColors[type];
+        input.title = label;
+        const text = document.createElement('label');
+        text.htmlFor = input.id;
+        text.textContent = label;
+        input.addEventListener('input', () => {
+          pieceColors[type] = input.value;
+          syncPieceMaterials();
+          savePieceColors();
+          updateMeshColorsForType(type);
+          updateLegendSwatches();
+        });
+        row.appendChild(input);
+        row.appendChild(text);
+        colorInputs.appendChild(row);
+      }
+      updateLegendSwatches();
+    }
+    buildColorControls();
+
+    resetColorsBtn.addEventListener('click', () => {
+      pieceColors = { ...DEFAULT_PIECE_COLORS };
+      syncPieceMaterials();
+      savePieceColors();
+      buildColorControls();
+      for (const type of PIECE_COLOR_TYPES) {
+        updateMeshColorsForType(type);
+      }
+    });
+
+    let legendExpanded = true;
+    legendToggle.addEventListener('click', () => {
+      legendExpanded = !legendExpanded;
+      legendItems.classList.toggle('collapsed', !legendExpanded);
+      legendToggle.textContent = legendExpanded ? 'Legend ▼' : 'Legend ▶';
+    });
 
     function clearScene() {
       while (sceneObjects.length > 0) {
@@ -375,7 +501,7 @@
       currentPieceData = data.pieces;
       computePieceDepths(data.pieces);
       updateLegendCounts(data.pieces);
-      drawPath(data.pieces);
+      drawPaths(data.pieces);
       updateChunkBorders(bounds);
     }
 
@@ -470,6 +596,7 @@
       toggleBounds.disabled = disabled;
       toggleChunkborders.disabled = disabled;
       togglePathline.disabled = disabled;
+      toggleOptimalPathline.disabled = disabled;
       forceMPK.disabled = disabled;
       stronghold1.disabled = disabled;
       stronghold2.disabled = disabled;
@@ -657,44 +784,64 @@
       return false;
     }
 
-    function drawPath(pieces) {
-      if (pathMesh) {
-        scene.remove(pathMesh);
-        disposeObject(pathMesh);
-        const index = sceneObjects.indexOf(pathMesh);
-        if (index !== -1) sceneObjects.splice(index, 1);
-        pathMesh = null;
-      }
+    function removePathMesh(meshRef) {
+      const mesh = meshRef;
+      if (!mesh) return null;
+      scene.remove(mesh);
+      disposeObject(mesh);
+      const index = sceneObjects.indexOf(mesh);
+      if (index !== -1) sceneObjects.splice(index, 1);
+      return null;
+    }
 
-      if (!togglePathline.checked) {
-        return;
-      }
+    function addPathLine(pieces, pathIdx, color, renderOrder) {
+      const points = buildPathPoints(pieces, pathIdx, (x, y, z) => new THREE.Vector3(x, y, z));
+      const pathGeometry = new THREE.BufferGeometry().setFromPoints(points);
+      const pathMaterial = new THREE.LineBasicMaterial({
+        color,
+        linewidth: 8,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Line(pathGeometry, pathMaterial);
+      mesh.renderOrder = renderOrder;
+      scene.add(mesh);
+      sceneObjects.push(mesh);
+      return mesh;
+    }
+
+    function drawPaths(pieces) {
+      pathMesh = removePathMesh(pathMesh);
+      optimalPathMesh = removePathMesh(optimalPathMesh);
 
       const graph = buildGraph(pieces);
       if (graph.startIndex === -1 || graph.portalIndex === -1) return;
-      const pathIdx = shortestPathAvoidingLibraries(graph.adj, pieces, graph.startIndex, graph.portalIndex);
-      if (!pathIdx || pathIdx.length === 0) {
-        console.log('[drawPath] no path', {
-          startIndex: graph.startIndex,
-          portalIndex: graph.portalIndex,
-          startNeighbors: (graph.adj.get(graph.startIndex) || []).length,
-        });
-        return;
+
+      if (togglePathline.checked) {
+        const pathIdx = shortestPathAvoidingLibraries(graph.adj, pieces, graph.startIndex, graph.portalIndex);
+        if (pathIdx && pathIdx.length > 0) {
+          console.log('[drawPath] path length', pathIdx.length, 'types', pathIdx.map(i => pieces[i].type).join(' -> '));
+          pathMesh = addPathLine(pieces, pathIdx, 0xffff00, 999);
+          window._pieceDepths = {};
+          pathIdx.forEach((idx, i) => { window._pieceDepths[idx] = i; });
+        } else {
+          console.log('[drawPath] no path', {
+            startIndex: graph.startIndex,
+            portalIndex: graph.portalIndex,
+            startNeighbors: (graph.adj.get(graph.startIndex) || []).length,
+          });
+        }
       }
-      console.log('[drawPath] path length', pathIdx.length, 'types', pathIdx.map(i => pieces[i].type).join(' -> '));
 
-      // Path uses pathing centers (5-way corridor / previous room width for prison halls); meshes stay full bbox.
-      const points = buildPathPoints(pieces, pathIdx, (x, y, z) => new THREE.Vector3(x, y, z));
-      const pathGeometry = new THREE.BufferGeometry().setFromPoints(points);
-      const pathMaterial = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 8, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false });
-      pathMesh = new THREE.Line(pathGeometry, pathMaterial);
-      pathMesh.renderOrder = 999;
-      scene.add(pathMesh);
-      sceneObjects.push(pathMesh);
-
-      // store distances for tooltip depth
-      window._pieceDepths = {};
-      pathIdx.forEach((idx, i) => { window._pieceDepths[idx] = i; });
+      if (toggleOptimalPathline.checked) {
+        const optimalIdx = shortestPathOptimalToPortal(graph.adj, pieces, graph.startIndex, graph.portalIndex);
+        if (optimalIdx && optimalIdx.length > 0) {
+          console.log('[drawPath] optimal length', optimalIdx.length, 'types', optimalIdx.map(i => pieces[i].type).join(' -> '));
+          optimalPathMesh = addPathLine(pieces, optimalIdx, 0x00ff66, 999);
+        }
+      }
     }
 
     // mouse interactions
@@ -743,7 +890,13 @@
         tooltip.style.top = `${event.clientY + 12}px`;
         tooltip.innerHTML = `<strong>${piece.type}</strong><br/>Age: ${age}<br/>Depth: ${depth}`;
         tooltip.style.display = 'block';
-        setTimeout(() => { tooltip.style.display = 'none'; }, 6000);
+        if (tooltipHideTimer != null) {
+          clearTimeout(tooltipHideTimer);
+        }
+        tooltipHideTimer = setTimeout(() => {
+          tooltip.style.display = 'none';
+          tooltipHideTimer = null;
+        }, 6000);
       }
     }
 
