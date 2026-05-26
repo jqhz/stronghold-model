@@ -108,7 +108,11 @@
     <span class="legend-swatch" data-type="ChestCorridor" style="color:#908c3f">■</span> ChestCorridor <span id="legendChestCorridorCount">(0)</span><br />
     <span class="legend-swatch" data-type="PrisonHall" style="color:#ff5555">■</span> PrisonHall <span id="legendPrisonHallCount">(0)</span><br />
     <span class="legend-swatch" data-type="FiveWayCrossing" style="color:#68175d">■</span> FiveWayCrossing <span id="legendFiveWayCrossingCount">(0)</span><br />
-    <span class="legend-swatch" data-type="default" style="color:#8c8c8c">■</span> Other pieces <span id="legendOtherCount">(0)</span><br />
+    <span class="legend-swatch" data-type="Corridor" style="color:#8c8c8c">■</span> Corridor <span id="legendCorridorCount">(0)</span><br />
+    <span class="legend-swatch" data-type="LeftTurn" style="color:#8c8c8c">■</span> LeftTurn <span id="legendLeftTurnCount">(0)</span><br />
+    <span class="legend-swatch" data-type="RightTurn" style="color:#8c8c8c">■</span> RightTurn <span id="legendRightTurnCount">(0)</span><br />
+    <span class="legend-swatch" data-type="SmallCorridor" style="color:#8c8c8c">■</span> SmallCorridor <span id="legendSmallCorridorCount">(0)</span><br />
+    <!-- <span class="legend-swatch" data-type="default" style="color:#8c8c8c">■</span> Other pieces <span id="legendOtherCount">(0)</span><br /> -->
     </div>
     <!-- <small style="display:block; margin-top:8px; color:#ccc; line-height:1.4; max-width:260px;">
       Chunk borders align to Minecraft world coordinates and start at x/z multiples of 16.
@@ -199,7 +203,11 @@
       ChestCorridor: '#908c3f',
       PrisonHall: '#ff5555',
       FiveWayCrossing: '#68175d',
-      default: '#8c8c8c',
+      Corridor: '#8c8c8c',
+      LeftTurn: '#8c8c8c',
+      RightTurn: '#8c8c8c',
+      SmallCorridor: '#8c8c8c',
+      // default: '#8c8c8c',
     };
 
     const PIECE_COLOR_TYPES = Object.keys(DEFAULT_PIECE_COLORS);
@@ -394,7 +402,7 @@
     function buildColorControls() {
       colorInputs.innerHTML = '';
       for (const type of PIECE_COLOR_TYPES) {
-        const label = type === 'default' ? 'Other pieces' : type;
+        const label = type;
         const row = document.createElement('div');
         row.className = 'color-row';
         const input = document.createElement('input');
@@ -619,7 +627,7 @@
         acc[piece.type] = (acc[piece.type] || 0) + 1;
         return acc;
       }, {});
-      const otherCount = pieces.length - (counts.Start || 0) - (counts.PortalRoom || 0) - (counts.Library || 0) - (counts.SpiralStaircase || 0) - (counts.Stairs || 0) - (counts.SquareRoom || 0) - (counts.ChestCorridor || 0) - (counts.PrisonHall || 0) - (counts.FiveWayCrossing || 0);
+      // const otherCount = pieces.length - (counts.Start || 0) - (counts.PortalRoom || 0) - (counts.Library || 0) - (counts.SpiralStaircase || 0) - (counts.Stairs || 0) - (counts.SquareRoom || 0) - (counts.ChestCorridor || 0) - (counts.PrisonHall || 0) - (counts.FiveWayCrossing || 0);
       document.getElementById('legendTotalRooms').textContent = `(${pieces.length})`;
       document.getElementById('legendStartCount').textContent = `(${counts.Start || 0}/${roomLimits.Start})`;
       document.getElementById('legendSquareCount').textContent = `(${counts.SquareRoom || 0}/${roomLimits.SquareRoom})`;
@@ -630,7 +638,11 @@
       document.getElementById('legendChestCorridorCount').textContent = `(${counts.ChestCorridor || 0}/${roomLimits.ChestCorridor})`;
       document.getElementById('legendPrisonHallCount').textContent = `(${counts.PrisonHall || 0}/${roomLimits.PrisonHall})`;
       document.getElementById('legendFiveWayCrossingCount').textContent = `(${counts.FiveWayCrossing || 0}/${roomLimits.FiveWayCrossing}) Counting Starter`;
-      document.getElementById('legendOtherCount').textContent = `(${otherCount})`;
+      document.getElementById('legendCorridorCount').textContent = `(${counts.Corridor || 0})`;
+      document.getElementById('legendLeftTurnCount').textContent = `(${counts.LeftTurn || 0})`;
+      document.getElementById('legendRightTurnCount').textContent = `(${counts.RightTurn || 0})`;
+      document.getElementById('legendSmallCorridorCount').textContent = `(${counts.SmallCorridor || 0})`;
+      // document.getElementById('legendOtherCount').textContent = `(${otherCount})`;
     }
 
     function disposeObject(object) {
