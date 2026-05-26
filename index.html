@@ -89,6 +89,7 @@
     <span style="color:#ff77a9">■</span> SpiralStaircase <span id="legendSpiralCount">(0)</span><br />
     <span style="color:#972851">■</span> StraightStaircase <span id="legendStraightCount">(0)</span><br />
     <span style="color:#38388f">■</span> SquareRoom <span id="legendSquareCount">(0)</span><br />
+    <span style="color:#908c3f">■</span> ChestCorridor <span id="legendChestCorridorCount">(0)</span><br />
     <span style="color:#8c8c8c">■</span> Other pieces <span id="legendOtherCount">(0)</span><br />
     <!-- <small style="display:block; margin-top:8px; color:#ccc; line-height:1.4; max-width:260px;">
       Chunk borders align to Minecraft world coordinates and start at x/z multiples of 16.
@@ -168,6 +169,7 @@
       SpiralStaircase: new THREE.MeshPhongMaterial({ color: 0xff77a9, opacity: 0.85, transparent: true }),
       Stairs: new THREE.MeshPhongMaterial({ color: 0x972851, opacity: 0.85, transparent: true }),
       SquareRoom: new THREE.MeshPhongMaterial({ color: 0x38388f, opacity: 0.85, transparent: true }),
+      ChestCorridor: new THREE.MeshPhongMaterial({ color: 0x908c3f, opacity: 0.85, transparent: true }),
       default: new THREE.MeshPhongMaterial({ color: 0x8c8c8c, opacity: 0.85, transparent: true })
     };
 
@@ -468,7 +470,7 @@
         acc[piece.type] = (acc[piece.type] || 0) + 1;
         return acc;
       }, {});
-      const otherCount = pieces.length - (counts.Start || 0) - (counts.PortalRoom || 0) - (counts.Library || 0) - (counts.SpiralStaircase || 0) - (counts.Stairs || 0) - (counts.SquareRoom || 0);
+      const otherCount = pieces.length - (counts.Start || 0) - (counts.PortalRoom || 0) - (counts.Library || 0) - (counts.SpiralStaircase || 0) - (counts.Stairs || 0) - (counts.SquareRoom || 0) - (counts.ChestCorridor || 0);
       document.getElementById('legendTotalRooms').textContent = `(${pieces.length})`;
       document.getElementById('legendStartCount').textContent = `(${counts.Start || 0}/${roomLimits.Start})`;
       document.getElementById('legendSquareCount').textContent = `(${counts.SquareRoom || 0}/${roomLimits.SquareRoom})`;
@@ -476,6 +478,7 @@
       document.getElementById('legendLibraryCount').textContent = `(${counts.Library || 0}/${roomLimits.Library})`;
       document.getElementById('legendStraightCount').textContent = `(${counts.Stairs || 0}/${roomLimits.Stairs})`;
       document.getElementById('legendSpiralCount').textContent = `(${counts.SpiralStaircase || 0}/${roomLimits.Stairs})`;
+      document.getElementById('legendChestCorridorCount').textContent = `(${counts.ChestCorridor || 0}/${roomLimits.ChestCorridor})`;
       document.getElementById('legendOtherCount').textContent = `(${otherCount})`;
     }
 
