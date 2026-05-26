@@ -6,9 +6,20 @@ export function buildGraph(pieces) {
   const nodes = pieces.map((p, i) => ({ ...p, index: i }));
   const adj = new Map();
 
-  // Helper: check adjacency if boxes touch or overlap in XZ and vertical overlap in Y
+  function overlapLength(a0, a1, b0, b1) {
+    return Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+  }
+
+  function centerXZ(piece) {
+    return {
+      x: (piece.minX + piece.maxX) / 2,
+      z: (piece.minZ + piece.maxZ) / 2,
+    };
+  }
+
+  // Cardinal face adjacency only: touching on one horizontal axis, overlapping on the
+  // other, Y overlap, and room centers aligned on the corridor axis (no corner cuts).
   function boxesAdjacent(a, b) {
-    // Two boxes are adjacent if their X and Z ranges are within 1 block (touching) and their Y ranges overlap
     const ax0 = Math.min(a.minX, a.maxX), ax1 = Math.max(a.minX, a.maxX);
     const az0 = Math.min(a.minZ, a.maxZ), az1 = Math.max(a.minZ, a.maxZ);
     const ay0 = Math.min(a.minY, a.maxY), ay1 = Math.max(a.minY, a.maxY);
@@ -19,11 +30,25 @@ export function buildGraph(pieces) {
 
     const xDist = Math.max(0, Math.max(bx0 - ax1, ax0 - bx1));
     const zDist = Math.max(0, Math.max(bz0 - az1, az0 - bz1));
+    const xOverlap = overlapLength(ax0, ax1, bx0, bx1);
+    const zOverlap = overlapLength(az0, az1, bz0, bz1);
+    const yOverlap = overlapLength(ay0, ay1, by0, by1);
 
-    const horizontalTouch = (xDist <= 1 && ( (az1 >= bz0 && az0 <= bz1) )) || (zDist <= 1 && ( (ax1 >= bx0 && ax0 <= bx1) ));
+    if (yOverlap <= 0) return false;
 
-    const yOverlap = !(ay1 < by0 || by1 < ay0);
-    return horizontalTouch && yOverlap;
+    const centerA = centerXZ(a);
+    const centerB = centerXZ(b);
+    const centerTol = 2;
+
+    const xFaceTouch = xDist <= 1 && zOverlap >= 2 && Math.abs(centerA.z - centerB.z) <= centerTol;
+    const zFaceTouch = zDist <= 1 && xOverlap >= 2 && Math.abs(centerA.x - centerB.x) <= centerTol;
+
+    // Reject corner-only contact where both axes are within touch distance.
+    if (xDist <= 1 && zDist <= 1 && !(xFaceTouch || zFaceTouch)) {
+      return false;
+    }
+
+    return xFaceTouch || zFaceTouch;
   }
 
   for (let i = 0; i < nodes.length; i++) {

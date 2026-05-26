@@ -428,7 +428,14 @@
           const prCenter = getPieceCenter(pieces[i]);
           const startCenter = getPieceCenter(pieces[1]);
           prDistanceValue.textContent = `${parseInt(prCenter.distanceTo(startCenter))}`;
-          spikeValue.textContent = `${prCenter.distanceTo(startCenter) > 64 ? "Too Far (> 64 Blocks)" : 'Yes'}`;
+          // console.log('prCenter: ' + prCenter.x + ', ' + startCenter.x);
+          if (isPortalChunkCulled(pieces) && prCenter.distanceTo(startCenter) >= 64) {
+            spikeValue.textContent = 'Culled and Too Far (> 64 Blocks)';
+          } else if (isPortalChunkCulled(pieces)) {
+            spikeValue.textContent = 'Culled';
+          } else {
+            spikeValue.textContent = `${prCenter.distanceTo(startCenter) >= 64 ? "Too Far (> 64 Blocks)" : 'Yes'}`;
+          }
         }
       }
     }
@@ -552,6 +559,102 @@
         piece.minY + (piece.maxY - piece.minY) / 2,
         piece.minZ + (piece.maxZ - piece.minZ) / 2
       );
+    }
+
+    function pieceChunkPos(piece) {
+      const center = getPieceCenter(piece);
+      return {
+        x: Math.floor(center.x / 16),
+        z: Math.floor(center.z / 16),
+      };
+    }
+
+    // Expand diagonal chunk transitions into cardinal steps for culling simulation.
+    function expandChunkPath(chunkPath) {
+      if (chunkPath.length <= 1) return chunkPath;
+      const expanded = [chunkPath[0]];
+      for (let i = 1; i < chunkPath.length; i++) {
+        let from = expanded[expanded.length - 1];
+        const to = chunkPath[i];
+        let dx = to.x - from.x;
+        let dz = to.z - from.z;
+        while (dx !== 0 || dz !== 0) {
+          if (dx !== 0 && dz !== 0) {
+            expanded.push({ x: from.x + Math.sign(dx), z: from.z });
+          } else if (dx !== 0) {
+            expanded.push({ x: from.x + Math.sign(dx), z: from.z });
+          } else {
+            expanded.push({ x: from.x, z: from.z + Math.sign(dz) });
+          }
+          from = expanded[expanded.length - 1];
+          dx = to.x - from.x;
+          dz = to.z - from.z;
+        }
+      }
+      return expanded;
+    }
+
+    function chunkStepDir(from, to) {
+      const dx = to.x - from.x;
+      const dz = to.z - from.z;
+      if (dx === 1 && dz === 0) return 'E';
+      if (dx === -1 && dz === 0) return 'W';
+      if (dx === 0 && dz === 1) return 'S';
+      if (dx === 0 && dz === -1) return 'N';
+      return null;
+    }
+
+    function oppositeDir(dir) {
+      if (dir === 'N') return 'S';
+      if (dir === 'S') return 'N';
+      if (dir === 'E') return 'W';
+      if (dir === 'W') return 'E';
+      return null;
+    }
+
+    // Horizontal-only approximation of 1.16.1 subchunk culling behavior from culling.md:
+    // once the BFS progresses away from the start in a direction, it does not later go
+    // "backwards" (opposite direction) for that traversal state. We apply this rule to the
+    // chunk-step path from the starter 5-way (pieces[1]) to the portal room.
+    function isPortalChunkCulled(pieces) {
+      const startPiece = pieces[1];
+      if (!startPiece) return false;
+
+      const portalIdx = pieces.findIndex(p => p.type === 'PortalRoom');
+      if (portalIdx === -1) return false;
+
+      const graph = buildGraph(pieces);
+      const pathIdx = shortestPathAvoidingLibraries(graph.adj, pieces, 1, portalIdx);
+      if (!pathIdx || pathIdx.length === 0) return false;
+
+      const startChunk = pieceChunkPos(startPiece);
+      const portalChunk = pieceChunkPos(pieces[portalIdx]);
+
+      // Adjacent chunks to the starter chunk are always rendered.
+      const manhattan = Math.abs(portalChunk.x - startChunk.x) + Math.abs(portalChunk.z - startChunk.z);
+      if (manhattan <= 1) return false;
+
+      // Convert piece path into chunk-step path, compressing duplicates, then cardinalize.
+      const chunkPath = [];
+      for (const idx of pathIdx) {
+        const c = pieceChunkPos(pieces[idx]);
+        const prev = chunkPath[chunkPath.length - 1];
+        if (!prev || prev.x !== c.x || prev.z !== c.z) {
+          chunkPath.push(c);
+        }
+      }
+      const cardinalChunkPath = expandChunkPath(chunkPath);
+
+      const forbidden = new Set();
+      for (let i = 1; i < cardinalChunkPath.length; i++) {
+        const dir = chunkStepDir(cardinalChunkPath[i - 1], cardinalChunkPath[i]);
+        if (!dir) return false;
+        if (forbidden.has(dir)) return true;
+        const back = oppositeDir(dir);
+        if (back) forbidden.add(back);
+      }
+
+      return false;
     }
 
     function drawPath(pieces) {
