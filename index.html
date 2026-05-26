@@ -115,7 +115,13 @@
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
     import { OrbitControls } from './OrbitControls.module.js';
     import { get_mpk_stronghold } from './get_mpk_stronghold.js';
-    import { buildGraph, shortestPathAvoidingLibraries } from './pathfinder.js';
+    import {
+      buildGraph,
+      shortestPathAvoidingLibraries,
+      isPrisonHall,
+      buildChunkPathSkippingPrisonHalls,
+      pieceChunkPos,
+    } from './pathfinder.js';
 
     const container = document.getElementById('canvas-container');
     const status = document.getElementById('status');
@@ -564,14 +570,6 @@
       );
     }
 
-    function pieceChunkPos(piece) {
-      const center = getPieceCenter(piece);
-      return {
-        x: Math.floor(center.x / 16),
-        z: Math.floor(center.z / 16),
-      };
-    }
-
     // Expand diagonal chunk transitions into cardinal steps for culling simulation.
     function expandChunkPath(chunkPath) {
       if (chunkPath.length <= 1) return chunkPath;
@@ -637,16 +635,8 @@
       const manhattan = Math.abs(portalChunk.x - startChunk.x) + Math.abs(portalChunk.z - startChunk.z);
       if (manhattan <= 1) return false;
 
-      // Convert piece path into chunk-step path, compressing duplicates, then cardinalize.
-      const chunkPath = [];
-      for (const idx of pathIdx) {
-        const c = pieceChunkPos(pieces[idx]);
-        const prev = chunkPath[chunkPath.length - 1];
-        if (!prev || prev.x !== c.x || prev.z !== c.z) {
-          chunkPath.push(c);
-        }
-      }
-      const cardinalChunkPath = expandChunkPath(chunkPath);
+      // Chunk steps bridge across PrisonHall (still in pathIdx); use neighbor room centers.
+      const cardinalChunkPath = expandChunkPath(buildChunkPathSkippingPrisonHalls(pieces, pathIdx));
 
       const forbidden = new Set();
       for (let i = 1; i < cardinalChunkPath.length; i++) {
@@ -676,9 +666,20 @@
       const graph = buildGraph(pieces);
       if (graph.startIndex === -1 || graph.portalIndex === -1) return;
       const pathIdx = shortestPathAvoidingLibraries(graph.adj, pieces, graph.startIndex, graph.portalIndex);
-      if (!pathIdx || pathIdx.length === 0) return;
+      if (!pathIdx || pathIdx.length === 0) {
+        console.log('[drawPath] no path', {
+          startIndex: graph.startIndex,
+          portalIndex: graph.portalIndex,
+          startNeighbors: (graph.adj.get(graph.startIndex) || []).length,
+        });
+        return;
+      }
+      console.log('[drawPath] path length', pathIdx.length, 'types', pathIdx.map(i => pieces[i].type).join(' -> '));
 
-      const points = pathIdx.map(i => getPieceCenter(pieces[i]));
+      // Path includes PrisonHall nodes; line uses non–PrisonHall centers (bridges across jail offset).
+      const points = pathIdx
+        .filter(i => !isPrisonHall(pieces[i]))
+        .map(i => getPieceCenter(pieces[i]));
       const pathGeometry = new THREE.BufferGeometry().setFromPoints(points);
       const pathMaterial = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 8, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false });
       pathMesh = new THREE.Line(pathGeometry, pathMaterial);
