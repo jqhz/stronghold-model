@@ -69,6 +69,7 @@
     .legend-entry { cursor: pointer; user-select: none; line-height: 1.5; }
     .legend-entry:hover { color: #9cf; }
     .legend-entry.legend-hidden { opacity: 0.4; text-decoration: line-through; }
+    
   </style>
   <script>
     window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
@@ -98,30 +99,32 @@
     <input type="checkbox" id="forceMPK" checked /> <label for="forceMPK">Force MPK Stronghold</label><br />
     <details id="colorSettings">
       <summary>Piece colors</summary>
+      <div id="colorInputs"></div>
+      <button id="resetColors" type="button" style="margin-top:6px; padding:2px 8px; font-size:0.85rem;">Reset to defaults</button>
+    </details>
+    <details id="legend">
+      <summary id="legendToggle" title="Click to expand/collapse">Legend</summary>
       <div class="piece-visibility-actions">
         <button id="enableAllPieces" type="button">Enable all</button>
         <button id="disableAllPieces" type="button">Disable all</button>
       </div>
-      <div id="colorInputs"></div>
-      <button id="resetColors" type="button" style="margin-top:6px; padding:2px 8px; font-size:0.85rem;">Reset to defaults</button>
+      <div id="legendItems">
+      <span> Total Rooms: <span id="legendTotalRooms">(0)</span></span><br />
+      <div class="legend-entry" data-type="Start"><span class="legend-swatch" data-type="Start" style="color:#82b1ff">■</span> Start <span id="legendStartCount">(0/1)</span></div>
+      <div class="legend-entry" data-type="PortalRoom"><span class="legend-swatch" data-type="PortalRoom" style="color:#ff9d00">■</span> PortalRoom <span id="legendPortalCount">(0/1)</span></div>
+      <div class="legend-entry" data-type="Library"><span class="legend-swatch" data-type="Library" style="color:#7cff8b">■</span> Library <span id="legendLibraryCount">(0/2)</span></div>
+      <div class="legend-entry" data-type="FiveWayCrossing"><span class="legend-swatch" data-type="FiveWayCrossing" style="color:#68175d">■</span> FiveWayCrossing <span id="legendFiveWayCrossingCount">(0/5)</span></div>
+      <div class="legend-entry" data-type="SquareRoom"><span class="legend-swatch" data-type="SquareRoom" style="color:#38388f">■</span> SquareRoom <span id="legendSquareCount">(0/6)</span></div>
+      <div class="legend-entry" data-type="ChestCorridor"><span class="legend-swatch" data-type="ChestCorridor" style="color:#908c3f">■</span> ChestCorridor <span id="legendChestCorridorCount">(0/4)</span></div>
+      <div class="legend-entry" data-type="PrisonHall"><span class="legend-swatch" data-type="PrisonHall" style="color:#ff5555">■</span> PrisonHall <span id="legendPrisonHallCount">(0/5)</span></div>
+      <div class="legend-entry" data-type="SpiralStaircase"><span class="legend-swatch" data-type="SpiralStaircase" style="color:#ff77a9">■</span> SpiralStaircase <span id="legendSpiralCount">(0/5)</span></div>
+      <div class="legend-entry" data-type="Stairs"><span class="legend-swatch" data-type="Stairs" style="color:#972851">■</span> StraightStaircase <span id="legendStraightCount">(0/5)</span></div>
+      <div class="legend-entry" data-type="Corridor"><span class="legend-swatch" data-type="Corridor" style="color:#8c8c8c">■</span> Corridor <span id="legendCorridorCount">(0)</span></div>
+      <div class="legend-entry" data-type="LeftTurn"><span class="legend-swatch" data-type="LeftTurn" style="color:#8c8c8c">■</span> LeftTurn <span id="legendLeftTurnCount">(0)</span></div>
+      <div class="legend-entry" data-type="RightTurn"><span class="legend-swatch" data-type="RightTurn" style="color:#8c8c8c">■</span> RightTurn <span id="legendRightTurnCount">(0)</span></div>
+      <div class="legend-entry" data-type="SmallCorridor"><span class="legend-swatch" data-type="SmallCorridor" style="color:#8c8c8c">■</span> SmallCorridor <span id="legendSmallCorridorCount">(0)</span></div>
+      </div>
     </details>
-    <strong id="legendToggle" title="Click to expand/collapse">Legend ▼</strong><br />
-    <div id="legendItems">
-    <span> Total Rooms: <span id="legendTotalRooms">(0)</span></span><br />
-    <div class="legend-entry" data-type="Start"><span class="legend-swatch" data-type="Start" style="color:#82b1ff">■</span> Start <span id="legendStartCount">(0/1)</span></div>
-    <div class="legend-entry" data-type="PortalRoom"><span class="legend-swatch" data-type="PortalRoom" style="color:#ff9d00">■</span> PortalRoom <span id="legendPortalCount">(0/1)</span></div>
-    <div class="legend-entry" data-type="Library"><span class="legend-swatch" data-type="Library" style="color:#7cff8b">■</span> Library <span id="legendLibraryCount">(0/2)</span></div>
-    <div class="legend-entry" data-type="SpiralStaircase"><span class="legend-swatch" data-type="SpiralStaircase" style="color:#ff77a9">■</span> SpiralStaircase <span id="legendSpiralCount">(0)</span></div>
-    <div class="legend-entry" data-type="Stairs"><span class="legend-swatch" data-type="Stairs" style="color:#972851">■</span> StraightStaircase <span id="legendStraightCount">(0)</span></div>
-    <div class="legend-entry" data-type="SquareRoom"><span class="legend-swatch" data-type="SquareRoom" style="color:#38388f">■</span> SquareRoom <span id="legendSquareCount">(0)</span></div>
-    <div class="legend-entry" data-type="ChestCorridor"><span class="legend-swatch" data-type="ChestCorridor" style="color:#908c3f">■</span> ChestCorridor <span id="legendChestCorridorCount">(0)</span></div>
-    <div class="legend-entry" data-type="PrisonHall"><span class="legend-swatch" data-type="PrisonHall" style="color:#ff5555">■</span> PrisonHall <span id="legendPrisonHallCount">(0)</span></div>
-    <div class="legend-entry" data-type="FiveWayCrossing"><span class="legend-swatch" data-type="FiveWayCrossing" style="color:#68175d">■</span> FiveWayCrossing <span id="legendFiveWayCrossingCount">(0)</span></div>
-    <div class="legend-entry" data-type="Corridor"><span class="legend-swatch" data-type="Corridor" style="color:#8c8c8c">■</span> Corridor <span id="legendCorridorCount">(0)</span></div>
-    <div class="legend-entry" data-type="LeftTurn"><span class="legend-swatch" data-type="LeftTurn" style="color:#8c8c8c">■</span> LeftTurn <span id="legendLeftTurnCount">(0)</span></div>
-    <div class="legend-entry" data-type="RightTurn"><span class="legend-swatch" data-type="RightTurn" style="color:#8c8c8c">■</span> RightTurn <span id="legendRightTurnCount">(0)</span></div>
-    <div class="legend-entry" data-type="SmallCorridor"><span class="legend-swatch" data-type="SmallCorridor" style="color:#8c8c8c">■</span> SmallCorridor <span id="legendSmallCorridorCount">(0)</span></div>
-    </div>
     <!-- <small style="display:block; margin-top:8px; color:#ccc; line-height:1.4; max-width:260px;">
       Chunk borders align to Minecraft world coordinates and start at x/z multiples of 16.
     </small> -->
@@ -529,12 +532,12 @@
       }
     });
 
-    let legendExpanded = true;
-    legendToggle.addEventListener('click', () => {
-      legendExpanded = !legendExpanded;
-      legendItems.classList.toggle('collapsed', !legendExpanded);
-      legendToggle.textContent = legendExpanded ? 'Legend ▼' : 'Legend ▶';
-    });
+    // let legendExpanded = true;
+    // legendToggle.addEventListener('click', () => {
+    //   legendExpanded = !legendExpanded;
+    //   legendItems.classList.toggle('collapsed', !legendExpanded);
+    //   legendToggle.textContent = legendExpanded ? 'Legend ▼' : 'Legend ▶';
+    // });
 
     function clearScene() {
       while (sceneObjects.length > 0) {
