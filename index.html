@@ -64,6 +64,11 @@
     #colorSettings summary:hover { color: #9cf; }
     .color-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 0.9rem; }
     .color-row input[type="color"] { width: 28px; height: 22px; padding: 0; border: 1px solid #555; border-radius: 4px; cursor: pointer; background: transparent; }
+    .piece-visibility-actions { margin: 6px 0; display: flex; gap: 6px; flex-wrap: wrap; }
+    .piece-visibility-actions button { padding: 2px 8px; font-size: 0.85rem; cursor: pointer; }
+    .legend-entry { cursor: pointer; user-select: none; line-height: 1.5; }
+    .legend-entry:hover { color: #9cf; }
+    .legend-entry.legend-hidden { opacity: 0.4; text-decoration: line-through; }
   </style>
   <script>
     window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
@@ -93,26 +98,29 @@
     <input type="checkbox" id="forceMPK" checked /> <label for="forceMPK">Force MPK Stronghold</label><br />
     <details id="colorSettings">
       <summary>Piece colors</summary>
+      <div class="piece-visibility-actions">
+        <button id="enableAllPieces" type="button">Enable all</button>
+        <button id="disableAllPieces" type="button">Disable all</button>
+      </div>
       <div id="colorInputs"></div>
       <button id="resetColors" type="button" style="margin-top:6px; padding:2px 8px; font-size:0.85rem;">Reset to defaults</button>
     </details>
     <strong id="legendToggle" title="Click to expand/collapse">Legend ▼</strong><br />
     <div id="legendItems">
     <span> Total Rooms: <span id="legendTotalRooms">(0)</span></span><br />
-    <span class="legend-swatch" data-type="Start" style="color:#82b1ff">■</span> Start <span id="legendStartCount">(0/1)</span><br />
-    <span class="legend-swatch" data-type="PortalRoom" style="color:#ff9d00">■</span> PortalRoom <span id="legendPortalCount">(0/1)</span><br />
-    <span class="legend-swatch" data-type="Library" style="color:#7cff8b">■</span> Library <span id="legendLibraryCount">(0/2)</span><br />
-    <span class="legend-swatch" data-type="SpiralStaircase" style="color:#ff77a9">■</span> SpiralStaircase <span id="legendSpiralCount">(0)</span><br />
-    <span class="legend-swatch" data-type="Stairs" style="color:#972851">■</span> StraightStaircase <span id="legendStraightCount">(0)</span><br />
-    <span class="legend-swatch" data-type="SquareRoom" style="color:#38388f">■</span> SquareRoom <span id="legendSquareCount">(0)</span><br />
-    <span class="legend-swatch" data-type="ChestCorridor" style="color:#908c3f">■</span> ChestCorridor <span id="legendChestCorridorCount">(0)</span><br />
-    <span class="legend-swatch" data-type="PrisonHall" style="color:#ff5555">■</span> PrisonHall <span id="legendPrisonHallCount">(0)</span><br />
-    <span class="legend-swatch" data-type="FiveWayCrossing" style="color:#68175d">■</span> FiveWayCrossing <span id="legendFiveWayCrossingCount">(0)</span><br />
-    <span class="legend-swatch" data-type="Corridor" style="color:#8c8c8c">■</span> Corridor <span id="legendCorridorCount">(0)</span><br />
-    <span class="legend-swatch" data-type="LeftTurn" style="color:#8c8c8c">■</span> LeftTurn <span id="legendLeftTurnCount">(0)</span><br />
-    <span class="legend-swatch" data-type="RightTurn" style="color:#8c8c8c">■</span> RightTurn <span id="legendRightTurnCount">(0)</span><br />
-    <span class="legend-swatch" data-type="SmallCorridor" style="color:#8c8c8c">■</span> SmallCorridor <span id="legendSmallCorridorCount">(0)</span><br />
-    <!-- <span class="legend-swatch" data-type="default" style="color:#8c8c8c">■</span> Other pieces <span id="legendOtherCount">(0)</span><br /> -->
+    <div class="legend-entry" data-type="Start"><span class="legend-swatch" data-type="Start" style="color:#82b1ff">■</span> Start <span id="legendStartCount">(0/1)</span></div>
+    <div class="legend-entry" data-type="PortalRoom"><span class="legend-swatch" data-type="PortalRoom" style="color:#ff9d00">■</span> PortalRoom <span id="legendPortalCount">(0/1)</span></div>
+    <div class="legend-entry" data-type="Library"><span class="legend-swatch" data-type="Library" style="color:#7cff8b">■</span> Library <span id="legendLibraryCount">(0/2)</span></div>
+    <div class="legend-entry" data-type="SpiralStaircase"><span class="legend-swatch" data-type="SpiralStaircase" style="color:#ff77a9">■</span> SpiralStaircase <span id="legendSpiralCount">(0)</span></div>
+    <div class="legend-entry" data-type="Stairs"><span class="legend-swatch" data-type="Stairs" style="color:#972851">■</span> StraightStaircase <span id="legendStraightCount">(0)</span></div>
+    <div class="legend-entry" data-type="SquareRoom"><span class="legend-swatch" data-type="SquareRoom" style="color:#38388f">■</span> SquareRoom <span id="legendSquareCount">(0)</span></div>
+    <div class="legend-entry" data-type="ChestCorridor"><span class="legend-swatch" data-type="ChestCorridor" style="color:#908c3f">■</span> ChestCorridor <span id="legendChestCorridorCount">(0)</span></div>
+    <div class="legend-entry" data-type="PrisonHall"><span class="legend-swatch" data-type="PrisonHall" style="color:#ff5555">■</span> PrisonHall <span id="legendPrisonHallCount">(0)</span></div>
+    <div class="legend-entry" data-type="FiveWayCrossing"><span class="legend-swatch" data-type="FiveWayCrossing" style="color:#68175d">■</span> FiveWayCrossing <span id="legendFiveWayCrossingCount">(0)</span></div>
+    <div class="legend-entry" data-type="Corridor"><span class="legend-swatch" data-type="Corridor" style="color:#8c8c8c">■</span> Corridor <span id="legendCorridorCount">(0)</span></div>
+    <div class="legend-entry" data-type="LeftTurn"><span class="legend-swatch" data-type="LeftTurn" style="color:#8c8c8c">■</span> LeftTurn <span id="legendLeftTurnCount">(0)</span></div>
+    <div class="legend-entry" data-type="RightTurn"><span class="legend-swatch" data-type="RightTurn" style="color:#8c8c8c">■</span> RightTurn <span id="legendRightTurnCount">(0)</span></div>
+    <div class="legend-entry" data-type="SmallCorridor"><span class="legend-swatch" data-type="SmallCorridor" style="color:#8c8c8c">■</span> SmallCorridor <span id="legendSmallCorridorCount">(0)</span></div>
     </div>
     <!-- <small style="display:block; margin-top:8px; color:#ccc; line-height:1.4; max-width:260px;">
       Chunk borders align to Minecraft world coordinates and start at x/z multiples of 16.
@@ -211,7 +219,10 @@
     };
 
     const PIECE_COLOR_TYPES = Object.keys(DEFAULT_PIECE_COLORS);
+    const LEGEND_PIECE_TYPES = PIECE_COLOR_TYPES;
     const COLOR_STORAGE_KEY = 'stronghold-piece-colors';
+    const COLOR_ENABLED_STORAGE_KEY = 'stronghold-piece-color-enabled';
+    const DISABLED_PIECE_COLOR = '#8c8c8c';
 
     function loadPieceColors() {
       try {
@@ -226,7 +237,7 @@
 
     function syncPieceMaterials() {
       for (const type of PIECE_COLOR_TYPES) {
-        const hex = pieceColors[type];
+        const hex = getDisplayColor(type);
         if (!pieceMaterials[type]) {
           pieceMaterials[type] = new THREE.MeshPhongMaterial({ color: hex, opacity: 0.85, transparent: true });
         } else {
@@ -234,34 +245,98 @@
         }
       }
     }
-    syncPieceMaterials();
 
     function savePieceColors() {
       localStorage.setItem(COLOR_STORAGE_KEY, JSON.stringify(pieceColors));
     }
 
     function materialFor(type) {
-      return pieceMaterials[type] || pieceMaterials.default;
+      return pieceMaterials[type] || pieceMaterials.Corridor;
     }
 
-    const NAMED_PIECE_TYPES = PIECE_COLOR_TYPES.filter(t => t !== 'default');
+    function defaultPieceColorEnabled() {
+      return Object.fromEntries(LEGEND_PIECE_TYPES.map(t => [t, true]));
+    }
+
+    function loadPieceColorEnabled() {
+      const defaults = defaultPieceColorEnabled();
+      try {
+        const stored = localStorage.getItem(COLOR_ENABLED_STORAGE_KEY);
+        if (stored) return { ...defaults, ...JSON.parse(stored) };
+      } catch (_) { /* ignore */ }
+      return defaults;
+    }
+
+    let pieceTypeColorEnabled = loadPieceColorEnabled();
+
+    function savePieceColorEnabled() {
+      localStorage.setItem(COLOR_ENABLED_STORAGE_KEY, JSON.stringify(pieceTypeColorEnabled));
+    }
+
+    function isPieceTypeColorEnabled(type) {
+      return pieceTypeColorEnabled[type] !== false;
+    }
+
+    function getDisplayColor(type) {
+      return isPieceTypeColorEnabled(type) ? pieceColors[type] : DISABLED_PIECE_COLOR;
+    }
+    syncPieceMaterials();
+
+    function applyDisplayColorsForType(type) {
+      const color = new THREE.Color(getDisplayColor(type));
+      for (const obj of sceneObjects) {
+        if (obj.isMesh && obj.userData.pieceType === type) {
+          obj.material.color.copy(color);
+        }
+      }
+    }
+
+    function applyAllPieceDisplayColors() {
+      syncPieceMaterials();
+      for (const type of LEGEND_PIECE_TYPES) {
+        applyDisplayColorsForType(type);
+      }
+      updateAllLegendEntryStyles();
+    }
+
+    function setPieceTypeColorEnabled(type, enabled) {
+      pieceTypeColorEnabled[type] = enabled;
+      savePieceColorEnabled();
+      applyDisplayColorsForType(type);
+      updateLegendEntryStyle(type);
+    }
+
+    function setAllPieceTypesColorEnabled(enabled) {
+      for (const type of LEGEND_PIECE_TYPES) {
+        pieceTypeColorEnabled[type] = enabled;
+      }
+      savePieceColorEnabled();
+      applyAllPieceDisplayColors();
+    }
+
+    function updateLegendEntryStyle(type) {
+      const entry = document.querySelector(`.legend-entry[data-type="${type}"]`);
+      if (entry) {
+        entry.classList.toggle('legend-hidden', !isPieceTypeColorEnabled(type));
+        entry.title = isPieceTypeColorEnabled(type) ? 'Click to gray out' : 'Click to restore color';
+      }
+    }
+
+    function updateAllLegendEntryStyles() {
+      for (const type of LEGEND_PIECE_TYPES) {
+        updateLegendEntryStyle(type);
+      }
+    }
 
     function updateMeshColorsForType(type) {
-      const mat = materialFor(type === 'default' ? undefined : type);
-      for (const obj of sceneObjects) {
-        if (!obj.isMesh || !obj.userData) continue;
-        const pieceType = obj.userData.type;
-        const matches = type === 'default'
-          ? !NAMED_PIECE_TYPES.includes(pieceType)
-          : pieceType === type;
-        if (matches) obj.material.color.copy(mat.color);
-      }
+      syncPieceMaterials();
+      applyDisplayColorsForType(type);
     }
 
     function updateLegendSwatches() {
       document.querySelectorAll('.legend-swatch').forEach(el => {
         const type = el.dataset.type;
-        el.style.color = pieceColors[type] || pieceColors.default;
+        el.style.color = pieceColors[type] || '#8c8c8c';
       });
     }
 
@@ -274,12 +349,14 @@
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.set(piece.minX + width / 2 - 0.5, piece.minY + height / 2 - 0.5, piece.minZ + depth / 2 - 0.5);
       mesh.userData = piece;
+      mesh.userData.pieceType = piece.type;
       scene.add(mesh);
       sceneObjects.push(mesh);
 
       const edges = new THREE.EdgesGeometry(geometry);
       const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 1 }));
       line.position.copy(mesh.position);
+      line.userData.pieceType = piece.type;
       scene.add(line);
       sceneObjects.push(line);
     }
@@ -302,6 +379,8 @@
     const forceMPK = document.getElementById('forceMPK');
     const colorInputs = document.getElementById('colorInputs');
     const resetColorsBtn = document.getElementById('resetColors');
+    const enableAllPiecesBtn = document.getElementById('enableAllPieces');
+    const disableAllPiecesBtn = document.getElementById('disableAllPieces');
     const legendToggle = document.getElementById('legendToggle');
     const legendItems = document.getElementById('legendItems');
     const loadingOverlay = document.getElementById('loadingOverlay');
@@ -427,6 +506,18 @@
       updateLegendSwatches();
     }
     buildColorControls();
+    updateAllLegendEntryStyles();
+
+    document.querySelectorAll('.legend-entry').forEach(entry => {
+      entry.addEventListener('click', () => {
+        const type = entry.dataset.type;
+        if (!type) return;
+        setPieceTypeColorEnabled(type, !isPieceTypeColorEnabled(type));
+      });
+    });
+
+    enableAllPiecesBtn.addEventListener('click', () => setAllPieceTypesColorEnabled(true));
+    disableAllPiecesBtn.addEventListener('click', () => setAllPieceTypesColorEnabled(false));
 
     resetColorsBtn.addEventListener('click', () => {
       pieceColors = { ...DEFAULT_PIECE_COLORS };
@@ -520,6 +611,7 @@
       currentPieceData = data.pieces;
       computePieceDepths(data.pieces);
       updateLegendCounts(data.pieces);
+      applyAllPieceDisplayColors();
       drawPaths(data.pieces);
       updateChunkBorders(bounds);
     }
