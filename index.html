@@ -404,8 +404,6 @@
     let multiStrongholdMode = false; // false until user runs Generate (bundled json is single stronghold)
     let strongholdsDiscovered = false; // true after runGetStrongholds has run for the current seed context
     const roomLimits = { Start: 1, PortalRoom: 1, Library: 2, Stairs: 5 , SquareRoom: 6, PrisonHall: 5, FiveWayCrossing: 4, ChestCorridor: 4, FiveWayCrossing: 5, PrisonHall: 5 };
-    const VIEWER_JAR = '/app/stronghold-viewer.jar';
-    const VIEWER_MAIN = 'stronghold.StrongholdViewerMain';
     const loadedJars = new Set();
     const chunkBorderGroup = new THREE.Group();
     let pathMesh = null;
@@ -1024,14 +1022,14 @@
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
 
     window.cheerpjInitialized = window.cheerpjInitialized || false;
-    async function initCheerpJ() {
-      if (window.cheerpjInitialized) return;
+    async function initCheerpJ() { // 1
+      if (window.cheerpjInitialized) return; // Stop if already running
       window.cheerpjInitialized = true;
       if (!window.cheerpjInit) {
         throw new Error('CheerpJ loader did not initialize.');
       }
       if (!window.cheerpjRunMain || !window.cheerpjRunJar) {
-        await cheerpjInit({ version: 17 });
+        await cheerpjInit({version: 17});
       }
       if (!window.cheerpjRunJar || !window.cheerpjRunMain) {
         throw new Error('CheerpJ runtime did not expose expected APIs.');
@@ -1042,68 +1040,129 @@
       if (loadedJars.has(jarName)) {
         return;
       }
-      const jarResult = cheerpjRunJar(jarName);
-      if (jarResult && typeof jarResult.then === 'function') {
-        await jarResult;
-      }
-      loadedJars.add(jarName);
-    }
-
-    async function runViewerJar(...args) {
-      await loadJar(VIEWER_JAR);
-
-      let captured = '';
-      const originalConsole = {
-        log: console.log,
-        info: console.info,
-        warn: console.warn,
-        error: console.error,
-      };
-
-      const capture = (...values) => {
-        captured += values.map(v => String(v)).join(' ') + '\n';
-      };
-
-      console.log = (...values) => { capture(...values); originalConsole.log(...values); };
-      console.info = (...values) => { capture(...values); originalConsole.info(...values); };
-      console.warn = (...values) => { capture(...values); originalConsole.warn(...values); };
-      console.error = (...values) => { capture(...values); originalConsole.error(...values); };
-
       try {
-        window.CHEERP_ARGV = args;
-        const result = cheerpjRunMain(VIEWER_MAIN, VIEWER_JAR, ...args);
-        if (result && typeof result.then === 'function') {
-          await result;
+        const jarResult = cheerpjRunJar(jarName);
+        if (jarResult && typeof jarResult.then === 'function') {
+          await jarResult;
         }
-      } finally {
-        window.CHEERP_ARGV = undefined;
-        console.log = originalConsole.log;
-        console.info = originalConsole.info;
-        console.warn = originalConsole.warn;
-        console.error = originalConsole.error;
+        loadedJars.add(jarName);
+      } catch (error) {
+        throw new Error(`Failed to load ${jarName}: ${error.message}`);
       }
-
-      const start = captured.indexOf('{');
-      const end = captured.lastIndexOf('}');
-      if (start < 0 || end < 0 || start > end) {
-        throw new Error(`Viewer JAR did not produce JSON output. Raw: ${captured.slice(0, 300)}`);
-      }
-      return captured.slice(start, end + 1);
     }
 
-    async function fetchStrongholdLocations(seed) {
-      const rawJson = await runViewerJar('locations', String(seed));
-      return JSON.parse(rawJson);
+    async function runStrongholdJar(seed, chunkX, chunkZ) { // 4
+      await loadJar('/app/stronghold.jar');
+      const args = [String(seed), parseInt(chunkX), parseInt(chunkZ)];
+
+      async function runMainWithClasspath(classPath) {
+        let captured = '';
+        const originalConsole = {
+          log: console.log,
+          info: console.info,
+          warn: console.warn,
+          error: console.error,
+        };
+
+        const capture = (...values) => {
+          captured += values.map(v => String(v)).join(' ') + '\n';
+        };
+
+        console.log = (...values) => { capture(...values); originalConsole.log(...values); };
+        console.info = (...values) => { capture(...values); originalConsole.info(...values); };
+        console.warn = (...values) => { capture(...values); originalConsole.warn(...values); };
+        console.error = (...values) => { capture(...values); originalConsole.error(...values); };
+
+        try {
+          window.CHEERP_ARGV = args;
+          const result = cheerpjRunMain("kaptainwutax.stronghold.Main", "/app/stronghold.jar", ...args);
+          if (result && typeof result.then === "function") {    
+            await result;
+          }
+        } finally {
+          window.CHEERP_ARGV = undefined;
+          console.log = originalConsole.log;
+          console.info = originalConsole.info;
+          console.warn = originalConsole.warn;
+          console.error = originalConsole.error;
+        }
+
+        const start = captured.indexOf('{');
+        const end = captured.lastIndexOf('}');
+        if (start < 0 || end < 0 || start > end) {
+          throw new Error(`Stronghold JAR did not produce JSON output for classpath ${classPath}.`);
+        }
+
+        const rawJson = captured.slice(start, end + 1);
+        return parseStrongholdJson(rawJson);
+      }
+
+      return await runMainWithClasspath('/app/stronghold.jar');
     }
 
-    async function fetchStrongholdModel(seed, chunkX, chunkZ) {
-      const rawJson = await runViewerJar(
-        'generate',
-        String(seed),
-        String(parseInt(chunkX, 10)),
-        String(parseInt(chunkZ, 10))
-      );
-      return parseStrongholdJson(rawJson);
+    async function runGetStrongholds(seed) { // 2
+      await loadJar('/app/app-1.0-SNAPSHOT-all.jar');
+      const args = [String(seed)];
+
+      async function runMainWithClasspath(classPath) {
+        let captured = '';
+        const originalConsole = {
+          log: console.log,
+          info: console.info,
+          warn: console.warn,
+          error: console.error,
+        };
+
+        const capture = (...values) => {
+          captured += values.map(v => String(v)).join(' ') + '\n';
+        };
+
+        console.log = (...values) => { capture(...values); originalConsole.log(...values); };
+        console.info = (...values) => { capture(...values); originalConsole.info(...values); };
+        console.warn = (...values) => { capture(...values); originalConsole.warn(...values); };
+        console.error = (...values) => { capture(...values); originalConsole.error(...values); };
+
+        try {
+          window.CHEERP_ARGV = args;
+          const result = cheerpjRunMain("org.example.app.App", "/app/app-1.0-SNAPSHOT-all.jar", ...args);
+          if (result && typeof result.then === "function") {    
+            await result;
+          }
+        } finally {
+          window.CHEERP_ARGV = undefined;
+          console.log = originalConsole.log;
+          console.info = originalConsole.info;
+          console.warn = originalConsole.warn;
+          console.error = originalConsole.error;
+        }
+
+        // console.log('Full captured output:', captured);
+        
+        // Parse plain text format: pairs of numbers (x, z for each stronghold)
+        const lines = captured.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+        const numbers = lines.map(line => parseInt(line)).filter(n => !isNaN(n));
+        
+        if (numbers.length < 6) {
+          console.error(`Expected at least 6 numbers (3 strongholds x 2 coords), got ${numbers.length}. Raw: ${captured}`);
+          throw new Error(`Stronghold JAR did not produce enough coordinate data.`);
+        }
+
+        // Group into pairs of coordinates
+        const strongholds = [];
+        for (let i = 0; i < 3 && i * 2 + 1 < numbers.length; i++) {
+          strongholds.push({
+            x: numbers[i * 2] * 16,
+            z: numbers[i * 2 + 1] * 16,
+            chunkX: numbers[i * 2],
+            chunkZ: numbers[i * 2 + 1]
+          });
+        }
+        
+        // console.log('Parsed strongholds:', strongholds);
+        return { strongholds };
+      }
+
+      return await runMainWithClasspath('/app/app-1.0-SNAPSHOT-all.jar');
     }
 
     // JSON numbers cannot represent 64-bit Minecraft seeds; quote worldSeed before parse.
@@ -1165,7 +1224,7 @@
         }
 
         if (!strongholdsDiscovered || prevSeed !== seed) {
-          const data_sh = await fetchStrongholdLocations(seed);
+          const data_sh = await runGetStrongholds(seed);
           setLoading(true, 'Loading stronghold candidates...', 40);
 
           if (data_sh && data_sh.strongholds) {
@@ -1189,7 +1248,7 @@
         const chunkZ = chunkZField.value !== '' ? chunkZField.value : defaultChunkZ;
 
         setLoading(true, 'Running stronghold generator...', 70);
-        const data = await fetchStrongholdModel(seed, chunkX, chunkZ);
+        const data = await runStrongholdJar(seed, chunkX, chunkZ);
 
         setLoading(true, 'Rendering stronghold model...', 90);
         renderData(data);
